@@ -31,12 +31,12 @@ abstract contract StabilityFeeTreasuryLike {
     function pullFunds(address, address, uint) virtual external;
 }
 abstract contract PIDValidator {
-    function scan(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8);
-    function clock(uint256, uint256, uint256) virtual external view returns (uint256);
-    function nick() virtual external view returns (uint256);
-    function blob() virtual external view returns (uint256);
-    function goof() virtual external view returns (uint256);
-    function wax() virtual external view returns (uint256);
+    function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8);
+    function rt(uint256, uint256, uint256) virtual external view returns (uint256);
+    function pscl() virtual external view returns (uint256);
+    function tlv() virtual external view returns (uint256);
+    function lprad() virtual external view returns (uint256);
+    function adi() virtual external view returns (uint256);
 }
 
 contract RateSetter is RateSetterMath {
@@ -201,26 +201,26 @@ contract RateSetter is RateSetterMath {
       // Store the latest market price
       latestMarketPrice = ray(marketPrice);
       // Validate the seed
-      uint256 blob  = pidValidator.blob();
-      uint256 wane  = rpower(pidValidator.nick(), blob, RAY);
-      uint8 scan    = pidValidator.scan(
-          rpower(seed, pidValidator.clock(marketPrice, redemptionPrice, wane), RAY),
+      uint256 tlv      = pidValidator.tlv();
+      uint256 iapcr    = rpower(pidValidator.pscl(), tlv, RAY);
+      uint8 validation = pidValidator.validateSeed(
+          rpower(seed, pidValidator.rt(marketPrice, redemptionPrice, iapcr), RAY),
           marketPrice,
           redemptionPrice,
-          wane,
-          rmultiply(pidValidator.goof(), rpower(pidValidator.wax(), blob, RAY))
+          iapcr,
+          rmultiply(pidValidator.lprad(), rpower(pidValidator.adi(), tlv, RAY))
       );
       // Store the timestamp of the update
       lastUpdateTime = now;
       // Pick new rate
-      uint256 newRate = (scan == 0) ? RAY : seed;
-      // // Update the rate inside the system (if it doesn't throw)
+      uint256 newRate = (validation == 0) ? RAY : seed;
+      // Update the rate inside the system (if it doesn't throw)
       try oracleRelayer.modifyParameters("redemptionRate", newRate) {
         // Emit success event
         emit UpdateRedemptionRate(
           ray(marketPrice),
           redemptionPrice,
-          newRate
+          seed
         );
       }
       catch(bytes memory revertReason) {

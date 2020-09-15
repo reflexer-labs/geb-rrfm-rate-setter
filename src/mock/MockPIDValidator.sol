@@ -12,22 +12,22 @@ contract MockPIDValidator {
         validationResult = 0;
       }
   }
-  function scan(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8) {
+  function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8) {
       return validationResult;
   }
-  function clock(uint256, uint256, uint256) virtual external view returns (uint256) {
+  function rt(uint256, uint256, uint256) virtual external view returns (uint256) {
       return 31536000;
   }
-  function nick() virtual external view returns (uint256) {
+  function pscl() virtual external view returns (uint256) {
       return RAY;
   }
-  function blob() virtual external view returns (uint256) {
+  function tlv() virtual external view returns (uint256) {
       return 1;
   }
-  function goof() virtual external view returns (uint256) {
+  function lprad() virtual external view returns (uint256) {
       return RAY;
   }
-  function wax() virtual external view returns (uint256) {
+  function adi() virtual external view returns (uint256) {
       return RAY;
   }
 }
