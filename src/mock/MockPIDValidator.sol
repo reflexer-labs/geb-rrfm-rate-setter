@@ -12,7 +12,7 @@ contract MockPIDValidator {
         validated = RAY - 2;
       }
   }
-  function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint256) {
+  function validateSeed(uint256, uint256, uint256, uint256, uint256, uint256) virtual external returns (uint256) {
       return validated;
   }
   function rt(uint256, uint256, uint256) virtual external view returns (uint256) {
