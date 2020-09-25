@@ -122,13 +122,13 @@ contract RateSetterTest is DSTest {
     function test_first_update_rate_no_warp() public {
         rateSetter.updateRate(RAY + 1, address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 1);
+        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function test_first_update_rate_with_warp() public {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(RAY + 1, address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 1);
+        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function testFail_update_before_period_passed() public {
         rateSetter.updateRate(RAY + 1, address(0x123));
@@ -138,7 +138,7 @@ contract RateSetterTest is DSTest {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(RAY + 1, address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 1);
+        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
 
         hevm.warp(now + periodSize);
         rateSetter.updateRate(RAY + 2, address(0x123));
@@ -146,24 +146,26 @@ contract RateSetterTest is DSTest {
         assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function test_null_rate_needed_submit_different() public {
-        validator.toggleValidationResult();
+        validator.toggleValidated();
         rateSetter.updateRate(RAY - 1, address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY);
+        assertEq(oracleRelayer.redemptionRate(), RAY - 2);
 
         hevm.warp(now + periodSize);
         rateSetter.updateRate(RAY + 2, address(0x123));
-        assertEq(oracleRelayer.redemptionRate(), RAY);
+        assertEq(oracleRelayer.redemptionRate(), RAY - 2);
     }
     function test_oracle_relayer_bounded_rate() public {
-        oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 5);
-        oracleRelayer.modifyParameters("redemptionRateLowerBound", RAY - 5);
+        oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 1);
+        oracleRelayer.modifyParameters("redemptionRateLowerBound", RAY - 1);
 
-        rateSetter.updateRate(RAY + 6, address(0x123));
-        assertEq(oracleRelayer.redemptionRate(), RAY + 5);
+        rateSetter.updateRate(RAY + 2, address(0x123));
+        assertEq(oracleRelayer.redemptionRate(), RAY + 1);
+
+        validator.toggleValidated();
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(RAY - 10, address(0x123));
-        assertEq(oracleRelayer.redemptionRate(), RAY - 5);
+        rateSetter.updateRate(RAY - 2, address(0x123));
+        assertEq(oracleRelayer.redemptionRate(), RAY - 1);
     }
 }

@@ -3,17 +3,17 @@ pragma solidity 0.6.7;
 contract MockPIDValidator {
   uint constant RAY = 10**27;
 
-  uint8 internal validationResult = 1;
+  uint256 internal validated = RAY + 2;
 
-  function toggleValidationResult() public {
-      if (validationResult == 0) {
-        validationResult = 1;
+  function toggleValidated() public {
+      if (validated == 0) {
+        validated = RAY + 2;
       } else {
-        validationResult = 0;
+        validated = RAY - 2;
       }
   }
-  function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8) {
-      return validationResult;
+  function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint256) {
+      return validated;
   }
   function rt(uint256, uint256, uint256) virtual external view returns (uint256) {
       return 31536000;

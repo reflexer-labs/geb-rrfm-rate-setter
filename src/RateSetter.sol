@@ -31,7 +31,7 @@ abstract contract StabilityFeeTreasuryLike {
     function pullFunds(address, address, uint) virtual external;
 }
 abstract contract PIDValidator {
-    function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint8);
+    function validateSeed(uint256, uint256, uint256, uint256, uint256) virtual external returns (uint256);
     function rt(uint256, uint256, uint256) virtual external view returns (uint256);
     function pscl() virtual external view returns (uint256);
     function tlv() virtual external view returns (uint256);
@@ -78,6 +78,7 @@ contract RateSetter is RateSetterMath {
   event UpdateRedemptionRate(
       uint marketPrice,
       uint redemptionPrice,
+      uint seed,
       uint redemptionRate
   );
   event FailUpdateRedemptionRate(
@@ -201,9 +202,9 @@ contract RateSetter is RateSetterMath {
       // Store the latest market price
       latestMarketPrice = ray(marketPrice);
       // Validate the seed
-      uint256 tlv      = pidValidator.tlv();
-      uint256 iapcr    = rpower(pidValidator.pscl(), tlv, RAY);
-      uint8 validation = pidValidator.validateSeed(
+      uint256 tlv       = pidValidator.tlv();
+      uint256 iapcr     = rpower(pidValidator.pscl(), tlv, RAY);
+      uint256 validated = pidValidator.validateSeed(
           rpower(seed, pidValidator.rt(marketPrice, redemptionPrice, iapcr), RAY),
           marketPrice,
           redemptionPrice,
@@ -212,15 +213,14 @@ contract RateSetter is RateSetterMath {
       );
       // Store the timestamp of the update
       lastUpdateTime = now;
-      // Pick new rate
-      uint256 newRate = (validation == 0) ? RAY : seed;
       // Update the rate inside the system (if it doesn't throw)
-      try oracleRelayer.modifyParameters("redemptionRate", newRate) {
+      try oracleRelayer.modifyParameters("redemptionRate", validated) {
         // Emit success event
         emit UpdateRedemptionRate(
           ray(marketPrice),
           redemptionPrice,
-          seed
+          seed,
+          validated
         );
       }
       catch(bytes memory revertReason) {
