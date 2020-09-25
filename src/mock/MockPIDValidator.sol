@@ -27,7 +27,13 @@ contract MockPIDValidator {
   function lprad() virtual external view returns (uint256) {
       return RAY;
   }
+  function uprad() virtual external view returns (uint256) {
+      return RAY;
+  }
   function adi() virtual external view returns (uint256) {
       return RAY;
+  }
+  function adat() virtual external view returns (uint256) {
+      return 0;
   }
 }
