@@ -197,6 +197,8 @@ contract RateSetter is RateSetterMath {
       (uint256 marketPrice, bool hasValidValue) = orcl.getResultWithValidity();
       // If the oracle has a value
       require(hasValidValue, "RateSetter/invalid-oracle-value");
+      // If the price is non-zero
+      require(marketPrice > 0, "RateSetter/null-price");
       // Get the latest redemption price
       uint redemptionPrice = oracleRelayer.redemptionPrice();
       // Get the caller's reward
