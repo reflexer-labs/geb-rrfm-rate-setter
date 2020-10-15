@@ -172,7 +172,7 @@ contract RateSetter is RateSetterMath {
       if (subtract(timeElapsed, updateRateDelay) > 0) {
           baseReward = rmultiply(rpower(perSecondCallerRewardIncrease, subtract(timeElapsed, updateRateDelay), RAY), baseReward);
       }
-      uint256 maxReward = minimum(maxUpdateCallerReward, treasuryAllowance());
+      uint256 maxReward = minimum(maxUpdateCallerReward, treasuryAllowance() / RAY);
       if (baseReward > maxReward) {
           baseReward = maxReward;
       }

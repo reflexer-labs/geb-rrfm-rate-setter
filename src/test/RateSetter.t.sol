@@ -76,7 +76,7 @@ contract RateSetterTest is DSTest {
         );
 
         treasury.setTotalAllowance(address(rateSetter), uint(-1));
-        treasury.setPerBlockAllowance(address(rateSetter), 5E18 * 10**9);
+        treasury.setPerBlockAllowance(address(rateSetter), 5E45);
     }
 
     function test_correct_setup() public {
