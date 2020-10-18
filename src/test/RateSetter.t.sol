@@ -8,21 +8,94 @@ import {RateSetter} from "../RateSetter.sol";
 import "../mock/MockOracleRelayer.sol";
 import "../mock/MockTreasury.sol";
 
+abstract contract DSValueLike {
+    function getResultWithValidity() virtual external view returns (uint256, bool);
+}
 contract Feed {
     bytes32 public price;
     bool public validPrice;
     uint public lastUpdateTime;
+
     constructor(uint256 price_, bool validPrice_) public {
         price = bytes32(price_);
         validPrice = validPrice_;
         lastUpdateTime = now;
     }
+
     function updateTokenPrice(uint256 price_) external {
         price = bytes32(price_);
         lastUpdateTime = now;
     }
     function getResultWithValidity() external view returns (uint256, bool) {
         return (uint(price), validPrice);
+    }
+}
+contract OSM {
+    address public priceSource;
+    uint16  constant ONE_HOUR = uint16(3600);
+    uint16  public updateDelay = ONE_HOUR;
+    uint64  public lastUpdateTime;
+
+    struct Feed {
+        uint128 value;
+        uint128 isValid;
+    }
+
+    Feed currentFeed;
+    Feed nextFeed;
+
+    constructor (address priceSource_) public {
+        priceSource = priceSource_;
+        if (priceSource != address(0)) {
+          (uint256 priceFeedValue, bool hasValidValue) = getPriceSourceUpdate();
+          if (hasValidValue) {
+            nextFeed = Feed(uint128(uint(priceFeedValue)), 1);
+            currentFeed = nextFeed;
+            lastUpdateTime = latestUpdateTime(currentTime());
+          }
+        }
+    }
+
+    // --- Math ---
+    function add(uint64 x, uint64 y) internal pure returns (uint64 z) {
+        z = x + y;
+        require(z >= x);
+    }
+
+    function currentTime() internal view returns (uint) {
+        return block.timestamp;
+    }
+
+    function latestUpdateTime(uint timestamp) internal view returns (uint64) {
+        require(updateDelay != 0, "OSM/update-delay-is-zero");
+        return uint64(timestamp - (timestamp % updateDelay));
+    }
+
+    function passedDelay() public view returns (bool ok) {
+        return currentTime() >= add(lastUpdateTime, updateDelay);
+    }
+
+    function getPriceSourceUpdate() internal view returns (uint256, bool) {
+        try DSValueLike(priceSource).getResultWithValidity() returns (uint256 priceFeedValue, bool hasValidValue) {
+          return (priceFeedValue, hasValidValue);
+        }
+        catch(bytes memory) {
+          return (0, false);
+        }
+    }
+
+    function updateResult() external {
+        require(passedDelay(), "OSM/not-passed");
+        (uint256 priceFeedValue, bool hasValidValue) = getPriceSourceUpdate();
+        if (hasValidValue) {
+            currentFeed = nextFeed;
+            nextFeed = Feed(uint128(uint(priceFeedValue)), 1);
+            lastUpdateTime = latestUpdateTime(currentTime());
+        }
+    }
+
+    function getResultWithValidity() external view returns (uint256,bool) {
+        return (uint(currentFeed.value), currentFeed.isValid == 1);
     }
 }
 
@@ -40,6 +113,7 @@ contract RateSetterTest is DSTest {
 
     MockPIDValidator validator;
     Feed orcl;
+    OSM osm;
 
     uint256 periodSize = 3600;
     uint256 baseUpdateCallerReward = 5E18;
@@ -59,6 +133,7 @@ contract RateSetterTest is DSTest {
 
         oracleRelayer = new MockOracleRelayer();
         orcl = new Feed(1 ether, true);
+        osm = new OSM(address(orcl));
         treasury = new MockTreasury(address(systemCoin));
 
         systemCoin.mint(address(treasury), coinsToMint);
@@ -66,7 +141,7 @@ contract RateSetterTest is DSTest {
         validator = new MockPIDValidator();
         rateSetter = new RateSetter(
           address(oracleRelayer),
-          address(orcl),
+          address(osm),
           address(treasury),
           address(validator),
           baseUpdateCallerReward,
@@ -167,5 +242,22 @@ contract RateSetterTest is DSTest {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(RAY - 2, address(0x123));
         assertEq(oracleRelayer.redemptionRate(), RAY - 1);
+    }
+    function test_update_oracle() public {
+        orcl.updateTokenPrice(1.05E18);
+
+        hevm.warp(now + periodSize);
+        rateSetter.updateRate(RAY + 1, address(0x123));
+
+        (uint newOsmPrice, bool validity) = osm.getResultWithValidity();
+        assertEq(newOsmPrice, 1E18);
+        assertTrue(validity);
+
+        hevm.warp(now + periodSize);
+        rateSetter.updateRate(RAY + 1, address(0x123));
+
+        (newOsmPrice, validity) = osm.getResultWithValidity();
+        assertEq(newOsmPrice, 1.05E18);
+        assertTrue(validity);
     }
 }

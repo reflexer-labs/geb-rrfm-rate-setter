@@ -18,8 +18,8 @@ pragma solidity ^0.6.7;
 import "./math/RateSetterMath.sol";
 
 abstract contract OracleLike {
+    function updateResult() virtual external;
     function getResultWithValidity() virtual external returns (uint256, bool);
-    function lastUpdateTime() virtual external view returns (uint64);
 }
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
@@ -87,6 +87,7 @@ contract RateSetter is RateSetterMath {
       bytes reason
   );
   event FailRewardCaller(bytes revertReason, address feeReceiver, uint256 amount);
+  event FailUpdateOracle(bytes revertReason, address orcl);
 
   constructor(
     address oracleRelayer_,
@@ -188,11 +189,21 @@ contract RateSetter is RateSetterMath {
       }
   }
 
+  // --- Oracle ---
+  function updateOracle() internal {
+      try orcl.updateResult() {}
+      catch(bytes memory revertReason) {
+          emit FailUpdateOracle(revertReason, address(orcl));
+      }
+  }
+
   // --- Feedback Mechanism ---
   function updateRate(uint seed, address feeReceiver) public {
       require(contractEnabled == 1, "RateSetter/contract-not-enabled");
       // Check delay between calls
       require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "RateSetter/wait-more");
+      // Try to update the oracle
+      updateOracle();
       // Get price feed updates
       (uint256 marketPrice, bool hasValidValue) = orcl.getResultWithValidity();
       // If the oracle has a value
