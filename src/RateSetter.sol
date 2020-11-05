@@ -29,8 +29,8 @@ abstract contract StabilityFeeTreasuryLike {
     function systemCoin() virtual external view returns (address);
     function pullFunds(address, address, uint) virtual external;
 }
-abstract contract PIDValidator {
-    function validateSeed(uint256, uint256, uint256) virtual external returns (uint256);
+abstract contract PIDCalculator {
+    function computeRate(uint256, uint256, uint256) virtual external returns (uint256);
     function rt(uint256, uint256, uint256) virtual external view returns (uint256);
     function pscl() virtual external view returns (uint256);
     function tlv() virtual external view returns (uint256);
@@ -69,13 +69,12 @@ contract RateSetter is RateSetterMath {
   // SF treasury
   StabilityFeeTreasuryLike  public treasury;
   // Calculator for the redemption rate
-  PIDValidator              public pidValidator;
+  PIDCalculator              public pidCalculator;
 
   // --- Events ---
   event UpdateRedemptionRate(
       uint marketPrice,
       uint redemptionPrice,
-      uint seed,
       uint redemptionRate
   );
   event FailUpdateRedemptionRate(
@@ -88,7 +87,7 @@ contract RateSetter is RateSetterMath {
     address oracleRelayer_,
     address orcl_,
     address treasury_,
-    address pidValidator_,
+    address pidCalculator_,
     uint256 baseUpdateCallerReward_,
     uint256 maxUpdateCallerReward_,
     uint256 perSecondCallerRewardIncrease_,
@@ -103,7 +102,7 @@ contract RateSetter is RateSetterMath {
       oracleRelayer                   = OracleRelayerLike(oracleRelayer_);
       orcl                            = OracleLike(orcl_);
       treasury                        = StabilityFeeTreasuryLike(treasury_);
-      pidValidator                    = PIDValidator(pidValidator_);
+      pidCalculator                    = PIDCalculator(pidCalculator_);
       baseUpdateCallerReward          = baseUpdateCallerReward_;
       maxUpdateCallerReward           = maxUpdateCallerReward_;
       perSecondCallerRewardIncrease   = perSecondCallerRewardIncrease_;
@@ -125,8 +124,8 @@ contract RateSetter is RateSetterMath {
         require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "RateSetter/treasury-coin-not-set");
         treasury = StabilityFeeTreasuryLike(addr);
       }
-      else if (parameter == "pidValidator") {
-        pidValidator = PIDValidator(addr);
+      else if (parameter == "pidCalculator") {
+        pidCalculator = PIDCalculator(addr);
       }
       else revert("RateSetter/modify-unrecognized-param");
   }
@@ -185,7 +184,7 @@ contract RateSetter is RateSetterMath {
   }
 
   // --- Feedback Mechanism ---
-  function updateRate(uint seed, address feeReceiver) public {
+  function updateRate(address feeReceiver) public {
       require(contractEnabled == 1, "RateSetter/contract-not-enabled");
       // Check delay between calls
       require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "RateSetter/wait-more");
@@ -202,9 +201,9 @@ contract RateSetter is RateSetterMath {
       // Store the latest market price
       latestMarketPrice = ray(marketPrice);
       // Validate the seed
-      uint256 tlv       = pidValidator.tlv();
-      uint256 iapcr     = rpower(pidValidator.pscl(), tlv, RAY);
-      uint256 validated = pidValidator.validateSeed(
+      uint256 tlv       = pidCalculator.tlv();
+      uint256 iapcr     = rpower(pidCalculator.pscl(), tlv, RAY);
+      uint256 validated = pidCalculator.computeRate(
           marketPrice,
           redemptionPrice,
           iapcr
@@ -217,7 +216,6 @@ contract RateSetter is RateSetterMath {
         emit UpdateRedemptionRate(
           ray(marketPrice),
           redemptionPrice,
-          seed,
           validated
         );
       }

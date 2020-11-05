@@ -1,6 +1,6 @@
 pragma solidity 0.6.7;
 
-contract MockPIDValidator {
+contract MockPIDCalculator {
   uint constant RAY = 10**27;
 
   uint256 internal validated = RAY + 2;
@@ -12,7 +12,7 @@ contract MockPIDValidator {
         validated = RAY - 2;
       }
   }
-  function validateSeed(uint256, uint256, uint256) virtual external returns (uint256) {
+  function computeRate(uint256, uint256, uint256) virtual external returns (uint256) {
       return validated;
   }
   function rt(uint256, uint256, uint256) virtual external view returns (uint256) {
