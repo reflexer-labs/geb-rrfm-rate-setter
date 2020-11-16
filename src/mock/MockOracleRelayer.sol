@@ -1,6 +1,6 @@
 /// MockMockOracleRelayer.sol
 
-pragma solidity ^0.6.7;
+pragma solidity 0.6.7;
 
 contract MockOracleRelayer {
     // The force that changes the system users' incentives by changing the redemption price
