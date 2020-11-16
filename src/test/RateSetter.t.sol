@@ -56,7 +56,7 @@ contract RateSetterTest is DSTest {
         hevm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
         hevm.warp(604411200);
 
-        systemCoin = new DSToken("RAI");
+        systemCoin = new DSToken("RAI", "RAI");
 
         oracleRelayer = new MockOracleRelayer();
         orcl = new Feed(1 ether, true);
