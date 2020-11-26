@@ -1,0 +1,9 @@
+seqLen: 50
+testLimit: 200000
+checkAsserts: true
+sender: ["0x10000", "0x20000", "0xabc00"]
+# filterFunctions: ["tlv", "adat", "dgt", "lut", "mrt", "adi", "uprad", "lprad", "pscl", "pdc", "hcd", "dos", "ips", "folb", "foub", "drr", "nb", "ag", "sg", "rt", "getNextRedemptionRate", "getGainAdjustedTerms", "getGainAdjustedPIOutput", "getNextPriceDeviationCumulative", "breaksNoiseBarrier", "getBoundedRedemptionRate", "riemannSum", "seedProposer", "allReaderToggle", "readers", "addAuthority", "removeReader", "authorities", "addReader", "removeAuthority"]
+coverage: true
+maxTimeDelay: 60480000 # 100 weeks
+maxBlockDelay: 6048000 # around 100 weeks of blocks
+maxValue: 1000000000000000000000 # 1k eth
