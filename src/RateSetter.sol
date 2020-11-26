@@ -102,7 +102,7 @@ contract RateSetter is RateSetterMath {
       oracleRelayer                   = OracleRelayerLike(oracleRelayer_);
       orcl                            = OracleLike(orcl_);
       treasury                        = StabilityFeeTreasuryLike(treasury_);
-      pidCalculator                    = PIDCalculator(pidCalculator_);
+      pidCalculator                   = PIDCalculator(pidCalculator_);
       baseUpdateCallerReward          = baseUpdateCallerReward_;
       maxUpdateCallerReward           = maxUpdateCallerReward_;
       perSecondCallerRewardIncrease   = perSecondCallerRewardIncrease_;
@@ -200,7 +200,7 @@ contract RateSetter is RateSetterMath {
       uint256 callerReward = getCallerReward();
       // Store the latest market price
       latestMarketPrice = ray(marketPrice);
-      // Validate the seed
+      // Calculate the rate
       uint256 tlv       = pidCalculator.tlv();
       uint256 iapcr     = rpower(pidCalculator.pscl(), tlv, RAY);
       uint256 validated = pidCalculator.computeRate(
