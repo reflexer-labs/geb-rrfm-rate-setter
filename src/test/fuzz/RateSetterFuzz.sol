@@ -2,8 +2,8 @@ pragma solidity ^0.6.7;
 
 import {MockToken} from '../../mock/MockToken.sol';
 import {MockPIDCalculator} from '../../mock/MockPIDCalculator.sol';
-import {PIRawPerSecondCalculator} from './PIRawPerSecondCalculator.sol';
-import {RateSetter} from "./RateSetter.sol";
+import {FuzzablePIRawPerSecondCalculator} from './FuzzablePIRawPerSecondCalculator.sol';
+import {FuzzableRateSetter} from "./FuzzableRateSetter.sol";
 import "../../mock/MockOracleRelayer.sol";
 import "../../mock/MockTreasury.sol";
 
@@ -33,13 +33,12 @@ contract Feed {
 }
 
 contract RateSetterFuzz {
-
     MockToken systemCoin;
     MockTreasury treasury;
     MockOracleRelayer oracleRelayer;
-    RateSetter rateSetter;
+    FuzzableRateSetter rateSetter;
 
-    PIRawPerSecondCalculator calculator;
+    FuzzablePIRawPerSecondCalculator calculator;
     Feed orcl;
 
     uint256 periodSize = 3600;
@@ -67,7 +66,7 @@ contract RateSetterFuzz {
         systemCoin.transfer(address(treasury), coinsToMint);
 
         // calculator = new MockPIDCalculator();
-        calculator = new PIRawPerSecondCalculator(
+        calculator = new FuzzablePIRawPerSecondCalculator(
             int(EIGHTEEN_DECIMAL_NUMBER),
             int(EIGHTEEN_DECIMAL_NUMBER),
             999997208243937652252849536, // 1% per hour
@@ -77,7 +76,7 @@ contract RateSetterFuzz {
             -int(NEGATIVE_RATE_LIMIT),
             new int[](5)
         );
-        rateSetter = new RateSetter(
+        rateSetter = new FuzzableRateSetter(
           address(oracleRelayer),
           address(orcl),
           address(treasury),
@@ -92,7 +91,7 @@ contract RateSetterFuzz {
         treasury.setPerBlockAllowance(address(rateSetter), 5E45);
     }
 
-    // run with the assert math library 
+    // run with the assert math library
     function updateRate(uint price, uint price2) public {
             changeMarketPrice(price);
             changeRedemptionPrice(price2);

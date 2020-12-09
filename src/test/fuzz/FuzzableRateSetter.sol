@@ -37,7 +37,7 @@ abstract contract PIDCalculator {
     function tlv() virtual external view returns (uint256);
 }
 
-contract RateSetter is RateSetterMath {
+contract FuzzableRateSetter is RateSetterMath {
   // --- Auth ---
   mapping (address => uint) public authorizedAccounts;
   function addAuthorization(address account) external isAuthorized { authorizedAccounts[account] = 1; }
