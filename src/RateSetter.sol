@@ -77,6 +77,14 @@ contract RateSetter is RateSetterMath {
       uint redemptionPrice,
       uint redemptionRate
   );
+  event ModifyParameters(
+      bytes32 parameter,
+      address addr
+  );
+  event ModifyParameters(
+      bytes32 parameter,
+      uint256 val
+  );
   event FailUpdateRedemptionRate(
       bytes reason
   );
@@ -128,6 +136,10 @@ contract RateSetter is RateSetterMath {
         pidCalculator = PIDCalculator(addr);
       }
       else revert("RateSetter/modify-unrecognized-param");
+      emit ModifyParameters(
+        parameter,
+        addr
+      );
   }
   function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
       require(contractEnabled == 1, "RateSetter/contract-not-enabled");
@@ -148,16 +160,26 @@ contract RateSetter is RateSetterMath {
         updateRateDelay = val;
       }
       else revert("RateSetter/modify-unrecognized-param");
+      emit ModifyParameters(
+        parameter,
+        val
+      );
   }
   function disableContract() external isAuthorized {
       contractEnabled = 0;
   }
 
   // --- Treasury ---
+  /**
+  * @notice This returns the stability fee treasury allowance for this contract by taking the minimum between the per block and the total allowances
+  **/
   function treasuryAllowance() public view returns (uint256) {
       (uint total, uint perBlock) = treasury.getAllowance(address(this));
       return minimum(total, perBlock);
   }
+  /*
+  * @notice Get the SF reward that can be sent to the updateRate() caller right now
+  */
   function getCallerReward() public view returns (uint256) {
       uint256 timeElapsed = (lastUpdateTime == 0) ? updateRateDelay : subtract(now, lastUpdateTime);
       if (timeElapsed < updateRateDelay) {
@@ -173,6 +195,11 @@ contract RateSetter is RateSetterMath {
       }
       return baseReward;
   }
+  /**
+  * @notice Send a stability fee reward to an address
+  * @param proposedFeeReceiver The SF receiver
+  * @param reward The system coin amount to send
+  **/
   function rewardCaller(address proposedFeeReceiver, uint256 reward) internal {
       if (address(treasury) == proposedFeeReceiver) return;
       if (address(treasury) == address(0) || reward == 0) return;
@@ -184,6 +211,11 @@ contract RateSetter is RateSetterMath {
   }
 
   // --- Feedback Mechanism ---
+  /**
+  * @notice Compute and set a new redemption rate
+  * @param feeReceiver The proposed address that should receive the reward for calling this function
+  *        (unless it's address(0) in which case msg.sender) will be the reward receiver
+  **/
   function updateRate(address feeReceiver) public {
       require(contractEnabled == 1, "RateSetter/contract-not-enabled");
       // Check delay between calls
@@ -229,6 +261,9 @@ contract RateSetter is RateSetterMath {
   }
 
   // --- Getters ---
+  /**
+  * @notice Get the redemption and the market prices for the system coin
+  **/
   function getRedemptionAndMarketPrices() public returns (uint256 marketPrice, uint256 redemptionPrice) {
       (marketPrice, ) = orcl.getResultWithValidity();
       redemptionPrice = oracleRelayer.redemptionPrice();
