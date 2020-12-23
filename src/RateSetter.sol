@@ -235,7 +235,7 @@ contract RateSetter is RateSetterMath {
     * @param feeReceiver The proposed address that should receive the reward for calling this function
     *        (unless it's address(0) in which case msg.sender) will be the reward receiver
     **/
-    function updateRate(address feeReceiver) public {
+    function updateRate(address feeReceiver) external {
         require(contractEnabled == 1, "RateSetter/contract-not-enabled");
         // Check delay between calls
         require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "RateSetter/wait-more");
@@ -283,7 +283,7 @@ contract RateSetter is RateSetterMath {
     /**
     * @notice Get the redemption and the market prices for the system coin
     **/
-    function getRedemptionAndMarketPrices() public returns (uint256 marketPrice, uint256 redemptionPrice) {
+    function getRedemptionAndMarketPrices() external returns (uint256 marketPrice, uint256 redemptionPrice) {
         (marketPrice, ) = orcl.getResultWithValidity();
         redemptionPrice = oracleRelayer.redemptionPrice();
     }
