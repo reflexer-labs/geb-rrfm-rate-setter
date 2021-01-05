@@ -45,6 +45,7 @@ contract RateSetterTest is DSTest {
     uint256 periodSize = 3600;
     uint256 baseUpdateCallerReward = 5E18;
     uint256 maxUpdateCallerReward  = 10E18;
+    uint256 maxRewardIncreaseDelay = 4 hours;
     uint256 perSecondCallerRewardIncrease = 1000192559420674483977255848; // 100% per hour
 
     uint256 coinsToMint = 1E40;
@@ -75,9 +76,10 @@ contract RateSetterTest is DSTest {
           perSecondCallerRewardIncrease,
           periodSize
         );
+        rateSetter.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
 
         treasury.setTotalAllowance(address(rateSetter), uint(-1));
-        treasury.setPerBlockAllowance(address(rateSetter), 5E45);
+        treasury.setPerBlockAllowance(address(rateSetter), uint(-1));
     }
 
     function test_correct_setup() public {
@@ -155,6 +157,19 @@ contract RateSetterTest is DSTest {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(address(0x123));
         assertEq(oracleRelayer.redemptionRate(), RAY - 2);
+    }
+    function test_wait_more_than_maxRewardIncreaseDelay_since_last_update() public {
+        hevm.warp(now + periodSize);
+        rateSetter.updateRate(address(0x123));
+        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+
+        hevm.warp(now + periodSize * 100000 + 1);
+        assertEq(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay(), 359996401);
+        assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > rateSetter.maxRewardIncreaseDelay());
+        assertEq(rateSetter.getCallerReward(), maxUpdateCallerReward);
+
+        rateSetter.updateRate(address(0x123));
+        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);
     }
     function test_oracle_relayer_bounded_rate() public {
         oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 1);

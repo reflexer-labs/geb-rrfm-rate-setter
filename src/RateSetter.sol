@@ -64,6 +64,8 @@ contract RateSetter is RateSetterMath {
     uint256 public baseUpdateCallerReward;          // [wad]
     // Max possible reward for the feeReceiver of a updateRate call
     uint256 public maxUpdateCallerReward;           // [wad]
+    // Max delay taken into consideration when calculating the adjusted reward
+    uint256 public maxRewardIncreaseDelay;
     // Rate applied to baseUpdateCallerReward every extra second passed beyond updateRateDelay seconds since the last updateRate call
     uint256 public perSecondCallerRewardIncrease;   // [ray]
 
@@ -123,6 +125,7 @@ contract RateSetter is RateSetterMath {
         maxUpdateCallerReward           = maxUpdateCallerReward_;
         perSecondCallerRewardIncrease   = perSecondCallerRewardIncrease_;
         updateRateDelay                 = updateRateDelay_;
+        maxRewardIncreaseDelay          = uint(-1);
         contractEnabled                 = 1;
 
         emit AddAuthorization(msg.sender);
@@ -174,6 +177,10 @@ contract RateSetter is RateSetterMath {
           require(val >= RAY, "RateSetter/invalid-caller-reward-increase");
           perSecondCallerRewardIncrease = val;
         }
+        else if (parameter == "maxRewardIncreaseDelay") {
+          require(val > 0, "RateSetter/invalid-max-increase-delay");
+          maxRewardIncreaseDelay = val;
+        }
         else if (parameter == "updateRateDelay") {
           require(val >= 0, "RateSetter/invalid-call-gap-length");
           updateRateDelay = val;
@@ -204,11 +211,15 @@ contract RateSetter is RateSetterMath {
         if (timeElapsed < updateRateDelay) {
             return 0;
         }
-        uint256 baseReward = baseUpdateCallerReward;
-        if (subtract(timeElapsed, updateRateDelay) > 0) {
-            baseReward = rmultiply(rpower(perSecondCallerRewardIncrease, subtract(timeElapsed, updateRateDelay), RAY), baseReward);
+        uint256 adjustedTime = subtract(timeElapsed, updateRateDelay);
+        uint256 maxReward    = minimum(maxUpdateCallerReward, treasuryAllowance() / RAY);
+        if (adjustedTime > maxRewardIncreaseDelay) {
+          return maxReward;
         }
-        uint256 maxReward = minimum(maxUpdateCallerReward, treasuryAllowance() / RAY);
+        uint256 baseReward   = baseUpdateCallerReward;
+        if (adjustedTime > 0) {
+            baseReward = rmultiply(rpower(perSecondCallerRewardIncrease, adjustedTime, RAY), baseReward);
+        }
         if (baseReward > maxReward) {
             baseReward = maxReward;
         }
@@ -233,7 +244,7 @@ contract RateSetter is RateSetterMath {
     /**
     * @notice Compute and set a new redemption rate
     * @param feeReceiver The proposed address that should receive the reward for calling this function
-    *        (unless it's address(0) in which case msg.sender) will be the reward receiver
+    *        (unless it's address(0) in which case msg.sender will get it)
     **/
     function updateRate(address feeReceiver) public {
         require(contractEnabled == 1, "RateSetter/contract-not-enabled");
