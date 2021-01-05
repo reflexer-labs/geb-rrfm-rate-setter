@@ -214,7 +214,7 @@ contract RateSetter is RateSetterMath {
         uint256 adjustedTime = subtract(timeElapsed, updateRateDelay);
         uint256 maxReward    = minimum(maxUpdateCallerReward, treasuryAllowance() / RAY);
         if (adjustedTime > maxRewardIncreaseDelay) {
-          return maxReward;
+            return maxReward;
         }
         uint256 baseReward   = baseUpdateCallerReward;
         if (adjustedTime > 0) {
