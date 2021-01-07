@@ -6,6 +6,7 @@ import {FuzzablePIRawPerSecondCalculator} from './FuzzablePIRawPerSecondCalculat
 import {FuzzableRateSetter} from "./FuzzableRateSetter.sol";
 import "../../mock/MockOracleRelayer.sol";
 import "../../mock/MockTreasury.sol";
+import "./RateSetterMath.sol";
 
 abstract contract Hevm {
     function warp(uint) virtual public;
@@ -106,4 +107,8 @@ contract RateSetterFuzz {
     function changeMarketPrice(uint price) internal {
         orcl.updateTokenPrice(price);
     }
+}
+
+contract RateSetterMathFuzz is RateSetterMath {
+
 }
