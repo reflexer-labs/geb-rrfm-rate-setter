@@ -166,7 +166,7 @@ contract RateSetterTest is DSTest {
         hevm.warp(now + periodSize * 100000 + 1);
         assertEq(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay(), 359996401);
         assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > rateSetter.maxRewardIncreaseDelay());
-        assertEq(rateSetter.getCallerReward(), maxUpdateCallerReward);
+        assertEq(rateSetter.getCallerReward(rateSetter.lastUpdateTime(), rateSetter.updateRateDelay()), maxUpdateCallerReward);
 
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);

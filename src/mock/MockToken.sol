@@ -17,9 +17,9 @@
 
 pragma solidity >=0.6.7;
 
-import "../math/RateSetterMath.sol";
+import "geb-treasury-reimbursement/math/GebMath.sol";
 
-contract MockToken is RateSetterMath {
+contract MockToken is GebMath {
     uint256                                            _supply;
     mapping (address => uint256)                       _balances;
     mapping (address => mapping (address => uint256))  _approvals;
