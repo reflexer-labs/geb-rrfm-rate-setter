@@ -15,7 +15,7 @@
 
 pragma solidity 0.6.7;
 
-
+import "geb-treasury-reimbursement/IncreasingTreasuryReimbursement.sol";
 
 abstract contract OracleLike {
     function getResultWithValidity() virtual external returns (uint256, bool);
@@ -31,7 +31,7 @@ abstract contract PIDCalculator {
     function tlv() virtual external view returns (uint256);
 }
 
-contract RateSetter is  {
+contract RateSetter is IncreasingTreasuryReimbursement {
     // --- Variables ---
     // Settlement flag
     uint256 public contractEnabled;                 // [0 or 1]
@@ -70,7 +70,7 @@ contract RateSetter is  {
       uint256 maxUpdateCallerReward_,
       uint256 perSecondCallerRewardIncrease_,
       uint256 updateRateDelay_
-    ) public {
+    ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
         oracleRelayer    = OracleRelayerLike(oracleRelayer_);
         orcl             = OracleLike(orcl_);
         pidCalculator    = PIDCalculator(pidCalculator_);
