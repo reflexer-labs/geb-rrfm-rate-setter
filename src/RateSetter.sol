@@ -15,7 +15,7 @@
 
 pragma solidity 0.6.7;
 
-import "./math/RateSetterMath.sol";
+
 
 abstract contract OracleLike {
     function getResultWithValidity() virtual external returns (uint256, bool);
@@ -24,11 +24,6 @@ abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
     function modifyParameters(bytes32,uint256) virtual external;
 }
-abstract contract StabilityFeeTreasuryLike {
-    function getAllowance(address) virtual external view returns (uint, uint);
-    function systemCoin() virtual external view returns (address);
-    function pullFunds(address, address, uint) virtual external;
-}
 abstract contract PIDCalculator {
     function computeRate(uint256, uint256, uint256) virtual external returns (uint256);
     function rt(uint256, uint256, uint256) virtual external view returns (uint256);
@@ -36,22 +31,8 @@ abstract contract PIDCalculator {
     function tlv() virtual external view returns (uint256);
 }
 
-contract RateSetter is RateSetterMath {
-    // --- Auth ---
-    mapping (address => uint) public authorizedAccounts;
-    function addAuthorization(address account) external isAuthorized {
-        authorizedAccounts[account] = 1;
-        emit AddAuthorization(account);
-    }
-    function removeAuthorization(address account) external isAuthorized {
-        authorizedAccounts[account] = 0;
-        emit RemoveAuthorization(account);
-    }
-    modifier isAuthorized {
-        require(authorizedAccounts[msg.sender] == 1, "RateSetter/account-not-authorized");
-        _;
-    }
-
+contract RateSetter is  {
+    // --- Variables ---
     // Settlement flag
     uint256 public contractEnabled;                 // [0 or 1]
     // Last recorded system coin market price
@@ -60,45 +41,24 @@ contract RateSetter is RateSetterMath {
     uint256 public lastUpdateTime;                  // [timestamp]
     // Enforced gap between calls
     uint256 public updateRateDelay;                 // [seconds]
-    // Starting reward for the feeReceiver of a updateRate call
-    uint256 public baseUpdateCallerReward;          // [wad]
-    // Max possible reward for the feeReceiver of a updateRate call
-    uint256 public maxUpdateCallerReward;           // [wad]
-    // Max delay taken into consideration when calculating the adjusted reward
-    uint256 public maxRewardIncreaseDelay;
-    // Rate applied to baseUpdateCallerReward every extra second passed beyond updateRateDelay seconds since the last updateRate call
-    uint256 public perSecondCallerRewardIncrease;   // [ray]
 
     // --- System Dependencies ---
     // OSM or medianizer for the system coin
     OracleLike                public orcl;
     // OracleRelayer where the redemption price is stored
     OracleRelayerLike         public oracleRelayer;
-    // SF treasury
-    StabilityFeeTreasuryLike  public treasury;
     // Calculator for the redemption rate
     PIDCalculator             public pidCalculator;
 
     // --- Events ---
-    event AddAuthorization(address account);
-    event RemoveAuthorization(address account);
     event UpdateRedemptionRate(
         uint marketPrice,
         uint redemptionPrice,
         uint redemptionRate
     );
-    event ModifyParameters(
-        bytes32 parameter,
-        address addr
-    );
-    event ModifyParameters(
-        bytes32 parameter,
-        uint256 val
-    );
     event FailUpdateRedemptionRate(
         bytes reason
     );
-    event FailRewardCaller(bytes revertReason, address feeReceiver, uint256 amount);
     event FailUpdateOracle(bytes revertReason, address orcl);
 
     constructor(
@@ -111,32 +71,16 @@ contract RateSetter is RateSetterMath {
       uint256 perSecondCallerRewardIncrease_,
       uint256 updateRateDelay_
     ) public {
-        if (address(treasury_) != address(0)) {
-          require(StabilityFeeTreasuryLike(treasury_).systemCoin() != address(0), "RateSetter/treasury-coin-not-set");
-        }
-        require(maxUpdateCallerReward_ >= baseUpdateCallerReward_, "RateSetter/invalid-max-caller-reward");
-        require(perSecondCallerRewardIncrease_ >= RAY, "RateSetter/invalid-per-second-reward-increase");
-        authorizedAccounts[msg.sender]  = 1;
-        oracleRelayer                   = OracleRelayerLike(oracleRelayer_);
-        orcl                            = OracleLike(orcl_);
-        treasury                        = StabilityFeeTreasuryLike(treasury_);
-        pidCalculator                   = PIDCalculator(pidCalculator_);
-        baseUpdateCallerReward          = baseUpdateCallerReward_;
-        maxUpdateCallerReward           = maxUpdateCallerReward_;
-        perSecondCallerRewardIncrease   = perSecondCallerRewardIncrease_;
-        updateRateDelay                 = updateRateDelay_;
-        maxRewardIncreaseDelay          = uint(-1);
-        contractEnabled                 = 1;
+        oracleRelayer    = OracleRelayerLike(oracleRelayer_);
+        orcl             = OracleLike(orcl_);
+        pidCalculator    = PIDCalculator(pidCalculator_);
 
-        emit AddAuthorization(msg.sender);
+        updateRateDelay  = updateRateDelay_;
+        contractEnabled  = 1;
+
         emit ModifyParameters("orcl", orcl_);
         emit ModifyParameters("oracleRelayer", oracleRelayer_);
-        emit ModifyParameters("treasury", treasury_);
         emit ModifyParameters("pidCalculator", pidCalculator_);
-
-        emit ModifyParameters("baseUpdateCallerReward", baseUpdateCallerReward_);
-        emit ModifyParameters("maxUpdateCallerReward", maxUpdateCallerReward_);
-        emit ModifyParameters("perSecondCallerRewardIncrease", perSecondCallerRewardIncrease_);
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
     }
 
@@ -195,51 +139,6 @@ contract RateSetter is RateSetterMath {
         contractEnabled = 0;
     }
 
-    // --- Treasury ---
-    /**
-    * @notice This returns the stability fee treasury allowance for this contract by taking the minimum between the per block and the total allowances
-    **/
-    function treasuryAllowance() public view returns (uint256) {
-        (uint total, uint perBlock) = treasury.getAllowance(address(this));
-        return minimum(total, perBlock);
-    }
-    /*
-    * @notice Get the SF reward that can be sent to the updateRate() caller right now
-    */
-    function getCallerReward() public view returns (uint256) {
-        uint256 timeElapsed = (lastUpdateTime == 0) ? updateRateDelay : subtract(now, lastUpdateTime);
-        if (timeElapsed < updateRateDelay) {
-            return 0;
-        }
-        uint256 adjustedTime = subtract(timeElapsed, updateRateDelay);
-        uint256 maxReward    = minimum(maxUpdateCallerReward, treasuryAllowance() / RAY);
-        if (adjustedTime > maxRewardIncreaseDelay) {
-            return maxReward;
-        }
-        uint256 baseReward   = baseUpdateCallerReward;
-        if (adjustedTime > 0) {
-            baseReward = rmultiply(rpower(perSecondCallerRewardIncrease, adjustedTime, RAY), baseReward);
-        }
-        if (baseReward > maxReward) {
-            baseReward = maxReward;
-        }
-        return baseReward;
-    }
-    /**
-    * @notice Send a stability fee reward to an address
-    * @param proposedFeeReceiver The SF receiver
-    * @param reward The system coin amount to send
-    **/
-    function rewardCaller(address proposedFeeReceiver, uint256 reward) internal {
-        if (address(treasury) == proposedFeeReceiver) return;
-        if (address(treasury) == address(0) || reward == 0) return;
-        address finalFeeReceiver = (proposedFeeReceiver == address(0)) ? msg.sender : proposedFeeReceiver;
-        try treasury.pullFunds(finalFeeReceiver, treasury.systemCoin(), reward) {}
-        catch(bytes memory revertReason) {
-            emit FailRewardCaller(revertReason, finalFeeReceiver, reward);
-        }
-    }
-
     // --- Feedback Mechanism ---
     /**
     * @notice Compute and set a new redemption rate
@@ -259,7 +158,7 @@ contract RateSetter is RateSetterMath {
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
         // Get the caller's reward
-        uint256 callerReward = getCallerReward();
+        uint256 callerReward = getCallerReward(lastUpdateTime, updateRateDelay);
         // Store the latest market price
         latestMarketPrice = ray(marketPrice);
         // Calculate the rate
