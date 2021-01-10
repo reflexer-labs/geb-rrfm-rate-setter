@@ -6,7 +6,7 @@ import {FuzzablePIRawPerSecondCalculator} from './FuzzablePIRawPerSecondCalculat
 import {FuzzableRateSetter} from "./FuzzableRateSetter.sol";
 import "../../mock/MockOracleRelayer.sol";
 import "../../mock/MockTreasury.sol";
-import "./RateSetterMath.sol";
+import "geb-treasury-reimbursement/math/GebMath.sol";
 
 abstract contract Hevm {
     function warp(uint) virtual public;
@@ -109,6 +109,6 @@ contract RateSetterFuzz {
     }
 }
 
-contract RateSetterMathFuzz is RateSetterMath {
+contract GebMathFuzz is GebMath {
 
 }
