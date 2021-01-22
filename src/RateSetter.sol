@@ -84,11 +84,6 @@ contract RateSetter is IncreasingTreasuryReimbursement {
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
     }
 
-    // --- Boolean Logic ---
-    function either(bool x, bool y) internal pure returns (bool z) {
-        assembly{ z := or(x, y)}
-    }
-
     // --- Management ---
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
         require(contractEnabled == 1, "RateSetter/contract-not-enabled");
