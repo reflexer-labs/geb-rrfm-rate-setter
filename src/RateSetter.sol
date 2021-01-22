@@ -186,6 +186,13 @@ contract RateSetter is IncreasingTreasuryReimbursement {
 
     // --- Getters ---
     /**
+    * @notice Get the market price from the system coin oracle
+    **/
+    function getMarketPrice() external view returns (uint256) {
+        (marketPrice, ) = orcl.getResultWithValidity();
+        return marketPrice;
+    }
+    /**
     * @notice Get the redemption and the market prices for the system coin
     **/
     function getRedemptionAndMarketPrices() external returns (uint256 marketPrice, uint256 redemptionPrice) {
