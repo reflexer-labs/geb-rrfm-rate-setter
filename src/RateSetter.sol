@@ -18,7 +18,7 @@ pragma solidity 0.6.7;
 import "geb-treasury-reimbursement/IncreasingTreasuryReimbursement.sol";
 
 abstract contract OracleLike {
-    function getResultWithValidity() virtual external returns (uint256, bool);
+    function getResultWithValidity() virtual external view returns (uint256, bool);
 }
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
@@ -189,7 +189,7 @@ contract RateSetter is IncreasingTreasuryReimbursement {
     * @notice Get the market price from the system coin oracle
     **/
     function getMarketPrice() external view returns (uint256) {
-        (marketPrice, ) = orcl.getResultWithValidity();
+        (uint256 marketPrice, ) = orcl.getResultWithValidity();
         return marketPrice;
     }
     /**
