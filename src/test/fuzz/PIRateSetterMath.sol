@@ -15,7 +15,7 @@
 
 pragma solidity 0.6.7;
 
-contract RateSetterMath {
+contract PIRateSetterMath {
     uint256 public constant RAY = 10 ** 27;
     uint256 public constant WAD = 10 ** 18;
 

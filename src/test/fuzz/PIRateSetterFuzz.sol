@@ -3,7 +3,7 @@ pragma solidity ^0.6.7;
 import {MockToken} from '../../mock/MockToken.sol';
 import {MockPIDCalculator} from '../../mock/MockPIDCalculator.sol';
 import {FuzzablePIRawPerSecondCalculator} from './FuzzablePIRawPerSecondCalculator.sol';
-import {FuzzableRateSetter} from "./FuzzableRateSetter.sol";
+import {FuzzablePIRateSetter} from "./FuzzablePIRateSetter.sol";
 import "../../mock/MockOracleRelayer.sol";
 import "../../mock/MockTreasury.sol";
 import "geb-treasury-reimbursement/math/GebMath.sol";
@@ -33,11 +33,11 @@ contract Feed {
     }
 }
 
-contract RateSetterFuzz {
+contract PIRateSetterFuzz {
     MockToken systemCoin;
     MockTreasury treasury;
     MockOracleRelayer oracleRelayer;
-    FuzzableRateSetter rateSetter;
+    FuzzablePIRateSetter rateSetter;
 
     FuzzablePIRawPerSecondCalculator calculator;
     Feed orcl;
@@ -77,7 +77,7 @@ contract RateSetterFuzz {
             -int(NEGATIVE_RATE_LIMIT),
             new int[](5)
         );
-        rateSetter = new FuzzableRateSetter(
+        rateSetter = new FuzzablePIRateSetter(
           address(oracleRelayer),
           address(orcl),
           address(treasury),

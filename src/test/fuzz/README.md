@@ -9,7 +9,7 @@ To run the fuzzer, set up echidna (https://github.com/crytic/echidna) in your ma
 Then run
 
 ```
-echidna-test src/test/fuzz/RateSetterFuzz.sol --contract RateSetterFuzz  --config echidna.yaml
+echidna-test src/test/fuzz/PIRateSetterFuzz.sol --contract PIRateSetterFuzz  --config echidna.yaml
 ```
 
 - PIRawPerSecondCalculatorFuzz: Unit fuzz of the PIRawPerSecondCalculator, turning function scrambleParams to public will make the script also fuzz the calculator params.
@@ -17,23 +17,23 @@ echidna-test src/test/fuzz/RateSetterFuzz.sol --contract RateSetterFuzz  --confi
 
 Configs are in the root of this repo (echidna.yaml). Settings for number of runs should be high due to the need to test larger timeframes (echidna will space txs by very little initially, and then will increase the lapse over time.)
 
-# RateSetter
+# PIRateSetter
 
 ## Long delays between updates
 
 Fuzzing the rate setter under normal situations. Both the market price and redemption prices are set by the fuzzer, then updateRate is called. Uses modified math libraries to force fail on over/underflows.
 
 Result (200000 runs):
-Analyzing contract: /Users/fabio/Documents/reflexer/geb-rrfm-rate-setter/src/test/fuzz/RateSetterFuzz.sol:RateSetterFuzz
+Analyzing contract: /Users/fabio/Documents/reflexer/geb-rrfm-rate-setter/src/test/fuzz/PIRateSetterFuzz.sol:PIRateSetterFuzz
 assertion in updateRate: passed! 🎉
 
 Unique instructions: 1848
 Unique codehashes: 6
 Seed: 5106227317005529644
 
-## Testing RateSetterMath function bounds
+## Testing PIRateSetterMath function bounds
 
-Run echidna against RateSetterMathFuzz contract in RateSetterFuzz.sol. It will list the boundaries (reduced to the approximate lowest values) in which each of the functions fail.
+Run echidna against PIRateSetterMathFuzz contract in PIRateSetterFuzz.sol. It will list the boundaries (reduced to the approximate lowest values) in which each of the functions fail.
 
 Tests found: 20  
 Seed: -7365341584816032386  

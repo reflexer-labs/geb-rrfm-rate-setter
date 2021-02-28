@@ -31,7 +31,7 @@ abstract contract PIDCalculator {
     function tlv() virtual external view returns (uint256);
 }
 
-contract RateSetter is IncreasingTreasuryReimbursement {
+contract PIRateSetter is IncreasingTreasuryReimbursement {
     // --- Variables ---
     // Settlement flag
     uint256 public contractEnabled;                 // [0 or 1]
@@ -86,45 +86,45 @@ contract RateSetter is IncreasingTreasuryReimbursement {
 
     // --- Management ---
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
-        require(contractEnabled == 1, "RateSetter/contract-not-enabled");
+        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
         if (parameter == "orcl") orcl = OracleLike(addr);
         else if (parameter == "oracleRelayer") oracleRelayer = OracleRelayerLike(addr);
         else if (parameter == "treasury") {
-          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "RateSetter/treasury-coin-not-set");
+          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "PIRateSetter/treasury-coin-not-set");
           treasury = StabilityFeeTreasuryLike(addr);
         }
         else if (parameter == "pidCalculator") {
           pidCalculator = PIDCalculator(addr);
         }
-        else revert("RateSetter/modify-unrecognized-param");
+        else revert("PIRateSetter/modify-unrecognized-param");
         emit ModifyParameters(
           parameter,
           addr
         );
     }
     function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
-        require(contractEnabled == 1, "RateSetter/contract-not-enabled");
+        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
         if (parameter == "baseUpdateCallerReward") {
-          require(val <= maxUpdateCallerReward, "RateSetter/invalid-base-caller-reward");
+          require(val <= maxUpdateCallerReward, "PIRateSetter/invalid-base-caller-reward");
           baseUpdateCallerReward = val;
         }
         else if (parameter == "maxUpdateCallerReward") {
-          require(val >= baseUpdateCallerReward, "RateSetter/invalid-max-caller-reward");
+          require(val >= baseUpdateCallerReward, "PIRateSetter/invalid-max-caller-reward");
           maxUpdateCallerReward = val;
         }
         else if (parameter == "perSecondCallerRewardIncrease") {
-          require(val >= RAY, "RateSetter/invalid-caller-reward-increase");
+          require(val >= RAY, "PIRateSetter/invalid-caller-reward-increase");
           perSecondCallerRewardIncrease = val;
         }
         else if (parameter == "maxRewardIncreaseDelay") {
-          require(val > 0, "RateSetter/invalid-max-increase-delay");
+          require(val > 0, "PIRateSetter/invalid-max-increase-delay");
           maxRewardIncreaseDelay = val;
         }
         else if (parameter == "updateRateDelay") {
-          require(val >= 0, "RateSetter/invalid-call-gap-length");
+          require(val >= 0, "PIRateSetter/invalid-call-gap-length");
           updateRateDelay = val;
         }
-        else revert("RateSetter/modify-unrecognized-param");
+        else revert("PIRateSetter/modify-unrecognized-param");
         emit ModifyParameters(
           parameter,
           val
@@ -141,15 +141,15 @@ contract RateSetter is IncreasingTreasuryReimbursement {
     *        (unless it's address(0) in which case msg.sender will get it)
     **/
     function updateRate(address feeReceiver) external {
-        require(contractEnabled == 1, "RateSetter/contract-not-enabled");
+        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
         // Check delay between calls
-        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "RateSetter/wait-more");
+        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "PIRateSetter/wait-more");
         // Get price feed updates
         (uint256 marketPrice, bool hasValidValue) = orcl.getResultWithValidity();
         // If the oracle has a value
-        require(hasValidValue, "RateSetter/invalid-oracle-value");
+        require(hasValidValue, "PIRateSetter/invalid-oracle-value");
         // If the price is non-zero
-        require(marketPrice > 0, "RateSetter/null-price");
+        require(marketPrice > 0, "PIRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
         // Get the caller's reward
@@ -157,9 +157,9 @@ contract RateSetter is IncreasingTreasuryReimbursement {
         // Store the latest market price
         latestMarketPrice = ray(marketPrice);
         // Calculate the rate
-        uint256 tlv       = pidCalculator.tlv();
-        uint256 iapcr     = rpower(pidCalculator.pscl(), tlv, RAY);
-        uint256 validated = pidCalculator.computeRate(
+        uint256 tlv        = pidCalculator.tlv();
+        uint256 iapcr      = rpower(pidCalculator.pscl(), tlv, RAY);
+        uint256 calculated = pidCalculator.computeRate(
             marketPrice,
             redemptionPrice,
             iapcr
@@ -167,12 +167,12 @@ contract RateSetter is IncreasingTreasuryReimbursement {
         // Store the timestamp of the update
         lastUpdateTime = now;
         // Update the rate inside the system (if it doesn't throw)
-        try oracleRelayer.modifyParameters("redemptionRate", validated) {
+        try oracleRelayer.modifyParameters("redemptionRate", calculated) {
           // Emit success event
           emit UpdateRedemptionRate(
             ray(marketPrice),
             redemptionPrice,
-            validated
+            calculated
           );
         }
         catch(bytes memory revertReason) {

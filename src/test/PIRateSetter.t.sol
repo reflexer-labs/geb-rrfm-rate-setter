@@ -4,7 +4,7 @@ import "ds-test/test.sol";
 import "ds-token/token.sol";
 
 import {MockPIDCalculator} from '../mock/MockPIDCalculator.sol';
-import {RateSetter} from "../RateSetter.sol";
+import {PIRateSetter} from "../PIRateSetter.sol";
 import "../mock/MockOracleRelayer.sol";
 import "../mock/MockTreasury.sol";
 
@@ -31,13 +31,13 @@ abstract contract Hevm {
     function warp(uint256) virtual public;
 }
 
-contract RateSetterTest is DSTest {
+contract PIRateSetterTest is DSTest {
     Hevm hevm;
 
     DSToken systemCoin;
     MockTreasury treasury;
     MockOracleRelayer oracleRelayer;
-    RateSetter rateSetter;
+    PIRateSetter rateSetter;
 
     MockPIDCalculator calculator;
     Feed orcl;
@@ -66,7 +66,7 @@ contract RateSetterTest is DSTest {
         systemCoin.mint(address(treasury), coinsToMint);
 
         calculator = new MockPIDCalculator();
-        rateSetter = new RateSetter(
+        rateSetter = new PIRateSetter(
           address(oracleRelayer),
           address(orcl),
           address(treasury),
