@@ -22,18 +22,16 @@ abstract contract OracleLike {
 }
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
+    function redemptionRate() virtual public view returns (uint256);
 }
 abstract contract SetterRelayer {
     function relayRate(uint256) virtual external;
 }
-abstract contract PIDCalculator {
+abstract contract DirectRateCalculator {
     function computeRate(uint256, uint256, uint256) virtual external returns (uint256);
-    function rt(uint256, uint256, uint256) virtual external view returns (uint256);
-    function pscl() virtual external view returns (uint256);
-    function tlv() virtual external view returns (uint256);
 }
 
-contract PIRateSetter is IncreasingTreasuryReimbursement {
+contract DirectRateSetter is IncreasingTreasuryReimbursement {
     // --- Variables ---
     // Settlement flag
     uint256 public contractEnabled;                 // [0 or 1]
@@ -52,7 +50,7 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     // The contract that will pass the new redemption rate to the oracle relayer
     SetterRelayer             public setterRelayer;
     // Calculator for the redemption rate
-    PIDCalculator             public pidCalculator;
+    DirectRateCalculator      public directRateCalculator;
 
     // --- Events ---
     event UpdateRedemptionRate(
@@ -69,52 +67,52 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
       address setterRelayer_,
       address orcl_,
       address treasury_,
-      address pidCalculator_,
+      address directRateCalculator_,
       uint256 baseUpdateCallerReward_,
       uint256 maxUpdateCallerReward_,
       uint256 perSecondCallerRewardIncrease_,
       uint256 updateRateDelay_
     ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
-        require(oracleRelayer_ != address(0), "PIRateSetter/null-oracle-relayer");
-        require(setterRelayer_ != address(0), "PIRateSetter/null-setter-relayer");
-        require(orcl_ != address(0), "PIRateSetter/null-orcl");
-        require(pidCalculator_ != address(0), "PIRateSetter/null-calculator");
+        require(oracleRelayer_ != address(0), "DirectRateSetter/null-oracle-relayer");
+        require(setterRelayer_ != address(0), "DirectRateSetter/null-setter-relayer");
+        require(orcl_ != address(0), "DirectRateSetter/null-orcl");
+        require(directRateCalculator_ != address(0), "DirectRateSetter/null-calculator");
 
-        oracleRelayer    = OracleRelayerLike(oracleRelayer_);
-        setterRelayer    = SetterRelayer(setterRelayer_);
-        orcl             = OracleLike(orcl_);
-        pidCalculator    = PIDCalculator(pidCalculator_);
+        oracleRelayer        = OracleRelayerLike(oracleRelayer_);
+        setterRelayer        = SetterRelayer(setterRelayer_);
+        orcl                 = OracleLike(orcl_);
+        directRateCalculator = DirectRateCalculator(directRateCalculator_);
 
-        updateRateDelay  = updateRateDelay_;
-        contractEnabled  = 1;
+        updateRateDelay    = updateRateDelay_;
+        contractEnabled    = 1;
 
         emit ModifyParameters("orcl", orcl_);
         emit ModifyParameters("oracleRelayer", oracleRelayer_);
         emit ModifyParameters("setterRelayer", setterRelayer_);
-        emit ModifyParameters("pidCalculator", pidCalculator_);
+        emit ModifyParameters("directRateCalculator", directRateCalculator_);
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
     }
 
-    // --- Management ---
     /*
     * @notify Modify the address of a contract that the setter is connected to
     * @param parameter Contract name
     * @param addr The new contract address
     */
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
-        require(addr != address(0), "PIRateSetter/null-addr");
+        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
+        require(addr != address(0), "DirectRateSetter/null-addr");
+
         if (parameter == "orcl") orcl = OracleLike(addr);
         else if (parameter == "oracleRelayer") oracleRelayer = OracleRelayerLike(addr);
         else if (parameter == "setterRelayer") setterRelayer = SetterRelayer(addr);
         else if (parameter == "treasury") {
-          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "PIRateSetter/treasury-coin-not-set");
+          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "DirectRateSetter/treasury-coin-not-set");
           treasury = StabilityFeeTreasuryLike(addr);
         }
-        else if (parameter == "pidCalculator") {
-          pidCalculator = PIDCalculator(addr);
+        else if (parameter == "directRateCalculator") {
+          directRateCalculator = DirectRateCalculator(addr);
         }
-        else revert("PIRateSetter/modify-unrecognized-param");
+        else revert("DirectRateSetter/modify-unrecognized-param");
         emit ModifyParameters(
           parameter,
           addr
@@ -126,28 +124,28 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     * @param val The new parameter value
     */
     function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
+        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
         if (parameter == "baseUpdateCallerReward") {
-          require(val <= maxUpdateCallerReward, "PIRateSetter/invalid-base-caller-reward");
+          require(val <= maxUpdateCallerReward, "DirectRateSetter/invalid-base-caller-reward");
           baseUpdateCallerReward = val;
         }
         else if (parameter == "maxUpdateCallerReward") {
-          require(val >= baseUpdateCallerReward, "PIRateSetter/invalid-max-caller-reward");
+          require(val >= baseUpdateCallerReward, "DirectRateSetter/invalid-max-caller-reward");
           maxUpdateCallerReward = val;
         }
         else if (parameter == "perSecondCallerRewardIncrease") {
-          require(val >= RAY, "PIRateSetter/invalid-caller-reward-increase");
+          require(val >= RAY, "DirectRateSetter/invalid-caller-reward-increase");
           perSecondCallerRewardIncrease = val;
         }
         else if (parameter == "maxRewardIncreaseDelay") {
-          require(val > 0, "PIRateSetter/invalid-max-increase-delay");
+          require(val > 0, "DirectRateSetter/invalid-max-increase-delay");
           maxRewardIncreaseDelay = val;
         }
         else if (parameter == "updateRateDelay") {
-          require(val >= 0, "PIRateSetter/invalid-call-gap-length");
+          require(val >= 0, "DirectRateSetter/invalid-call-gap-length");
           updateRateDelay = val;
         }
-        else revert("PIRateSetter/modify-unrecognized-param");
+        else revert("DirectRateSetter/modify-unrecognized-param");
         emit ModifyParameters(
           parameter,
           val
@@ -167,28 +165,26 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     *        (unless it's address(0) in which case msg.sender will get it)
     **/
     function updateRate(address feeReceiver) external {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
+        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
         // Check delay between calls
-        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "PIRateSetter/wait-more");
+        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "DirectRateSetter/wait-more");
         // Get price feed updates
         (uint256 marketPrice, bool hasValidValue) = orcl.getResultWithValidity();
         // If the oracle has a value
-        require(hasValidValue, "PIRateSetter/invalid-oracle-value");
+        require(hasValidValue, "DirectRateSetter/invalid-oracle-value");
         // If the price is non-zero
-        require(marketPrice > 0, "PIRateSetter/null-price");
+        require(marketPrice > 0, "DirectRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
         // Get the caller's reward
         uint256 callerReward = getCallerReward(lastUpdateTime, updateRateDelay);
         // Store the latest market price
         latestMarketPrice = ray(marketPrice);
-        // Calculate the rate
-        uint256 tlv        = pidCalculator.tlv();
-        uint256 iapcr      = rpower(pidCalculator.pscl(), tlv, RAY);
-        uint256 calculated = pidCalculator.computeRate(
+        // Calculate the new rate
+        uint256 calculated = directRateCalculator.computeRate(
             marketPrice,
             redemptionPrice,
-            iapcr
+            oracleRelayer.redemptionRate()
         );
         // Store the timestamp of the update
         lastUpdateTime = now;

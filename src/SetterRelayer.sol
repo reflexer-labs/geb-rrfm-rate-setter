@@ -8,14 +8,25 @@ abstract contract OracleRelayerLike {
 contract SetterRelayer {
     // --- Auth ---
     mapping (address => uint) public authorizedAccounts;
+    /**
+     * @notice Add auth to an account
+     * @param account Account to add auth to
+     */
     function addAuthorization(address account) virtual external isAuthorized {
         authorizedAccounts[account] = 1;
         emit AddAuthorization(account);
     }
+    /**
+     * @notice Remove auth from an account
+     * @param account Account to remove auth from
+     */
     function removeAuthorization(address account) virtual external isAuthorized {
         authorizedAccounts[account] = 0;
         emit RemoveAuthorization(account);
     }
+    /**
+    * @notice Checks whether msg.sender can call an authed function
+    **/
     modifier isAuthorized {
         require(authorizedAccounts[msg.sender] == 1, "SetterRelayer/account-not-authorized");
         _;
@@ -31,18 +42,15 @@ contract SetterRelayer {
     event RelayRate(address setter, uint256 redemptionRate);
 
     // --- Variables ---
+    // The address that's allowed to pass new redemption rates
     address           public setter;
-
+    // The oracle relayer contract
     OracleRelayerLike public oracleRelayer;
 
-    constructor(address setter_, address oracleRelayer_) public {
-        require(setter_ != address(0), "SetterRelayer/null-setter");
-        setter        = setter_;
-        oracleRelayer = OracleRelayer(oracleRelayer_);
-        emit ModifyParameters(
-          "setter",
-          setter
-        );
+    constructor(address oracleRelayer_) public {
+        authorizedAccounts[msg.sender] = 1;
+        oracleRelayer = OracleRelayerLike(oracleRelayer_);
+        emit AddAuthorization(msg.sender);
     }
 
     // --- Administration ---

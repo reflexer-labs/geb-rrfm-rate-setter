@@ -3,10 +3,10 @@ pragma solidity 0.6.7;
 import "ds-test/test.sol";
 import "ds-token/token.sol";
 
-import {MockPIDCalculator} from '../mock/MockPIDCalculator.sol';
-import {PIRateSetter} from "../PIRateSetter.sol";
+import {DirectRateSetter} from "../DirectRateSetter.sol";
 import {SetterRelayer} from "../SetterRelayer.sol";
 
+import {MockDirectRateCalculator} from "../mock/MockDirectRateCalculator.sol";
 import "../mock/MockOracleRelayer.sol";
 import "../mock/MockTreasury.sol";
 
@@ -33,17 +33,17 @@ abstract contract Hevm {
     function warp(uint256) virtual public;
 }
 
-contract PIRateSetterTest is DSTest {
+contract DirectRateSetterTest is DSTest {
     Hevm hevm;
 
     DSToken systemCoin;
     MockTreasury treasury;
     MockOracleRelayer oracleRelayer;
 
-    PIRateSetter rateSetter;
+    DirectRateSetter rateSetter;
     SetterRelayer setterRelayer;
 
-    MockPIDCalculator calculator;
+    MockDirectRateCalculator calculator;
     Feed orcl;
 
     uint256 periodSize = 3600;
@@ -69,9 +69,9 @@ contract PIRateSetterTest is DSTest {
 
         systemCoin.mint(address(treasury), coinsToMint);
 
-        calculator    = new MockPIDCalculator();
+        calculator    = new MockDirectRateCalculator();
         setterRelayer = new SetterRelayer(address(oracleRelayer));
-        rateSetter    = new PIRateSetter(
+        rateSetter    = new DirectRateSetter(
           address(oracleRelayer),
           address(setterRelayer),
           address(orcl),
@@ -82,6 +82,8 @@ contract PIRateSetterTest is DSTest {
           perSecondCallerRewardIncrease,
           periodSize
         );
+
+        calculator.setRate(1E27 + 5);
         rateSetter.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
         setterRelayer.modifyParameters("setter", address(rateSetter));
 
@@ -102,7 +104,7 @@ contract PIRateSetterTest is DSTest {
         rateSetter.modifyParameters("orcl", address(0x12));
         rateSetter.modifyParameters("oracleRelayer", address(0x12));
         rateSetter.modifyParameters("treasury", address(newTreasury));
-        rateSetter.modifyParameters("pidCalculator", address(0x12));
+        rateSetter.modifyParameters("directRateCalculator", address(0x12));
 
         rateSetter.modifyParameters("baseUpdateCallerReward", 1);
         rateSetter.modifyParameters("maxUpdateCallerReward", 2);
@@ -113,7 +115,7 @@ contract PIRateSetterTest is DSTest {
         assertTrue(address(rateSetter.orcl()) == address(0x12));
         assertTrue(address(rateSetter.oracleRelayer()) == address(0x12));
         assertTrue(address(rateSetter.treasury()) == address(newTreasury));
-        assertTrue(address(rateSetter.pidCalculator()) == address(0x12));
+        assertTrue(address(rateSetter.directRateCalculator()) == address(0x12));
 
         assertEq(rateSetter.baseUpdateCallerReward(), 1);
         assertEq(rateSetter.maxUpdateCallerReward(), 2);
@@ -132,13 +134,13 @@ contract PIRateSetterTest is DSTest {
     function test_first_update_rate_no_warp() public {
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
+        assertEq(oracleRelayer.redemptionRate(), 1E27 + 5);
     }
     function test_first_update_rate_with_warp() public {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
+        assertEq(oracleRelayer.redemptionRate(), 1E27 + 5);
     }
     function testFail_update_before_period_passed() public {
         rateSetter.updateRate(address(0x123));
@@ -148,22 +150,12 @@ contract PIRateSetterTest is DSTest {
         hevm.warp(now + periodSize);
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
+        assertEq(oracleRelayer.redemptionRate(), 1E27 + 5);
 
         hevm.warp(now + periodSize);
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward * 2);
-        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
-    }
-    function test_null_rate_needed_submit_different() public {
-        calculator.toggleValidated();
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-        assertEq(oracleRelayer.redemptionRate(), RAY - 2);
-
-        hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(oracleRelayer.redemptionRate(), RAY - 2);
+        assertEq(oracleRelayer.redemptionRate(), 1E27 + 5);
     }
     function test_wait_more_than_maxRewardIncreaseDelay_since_last_update() public {
         hevm.warp(now + periodSize);
@@ -185,9 +177,10 @@ contract PIRateSetterTest is DSTest {
         rateSetter.updateRate(address(0x123));
         assertEq(oracleRelayer.redemptionRate(), RAY + 1);
 
-        calculator.toggleValidated();
+        calculator.setRate(1E27 - 5);
 
         hevm.warp(now + periodSize);
+
         rateSetter.updateRate(address(0x123));
         assertEq(oracleRelayer.redemptionRate(), RAY - 1);
     }
