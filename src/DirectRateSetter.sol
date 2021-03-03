@@ -15,7 +15,7 @@
 
 pragma solidity 0.6.7;
 
-import "geb-treasury-reimbursement/IncreasingTreasuryReimbursement.sol";
+import "geb-treasury-reimbursement/math/GebMath.sol";
 
 abstract contract OracleLike {
     function getResultWithValidity() virtual external view returns (uint256, bool);
@@ -25,16 +25,40 @@ abstract contract OracleRelayerLike {
     function redemptionRate() virtual public view returns (uint256);
 }
 abstract contract SetterRelayer {
-    function relayRate(uint256) virtual external;
+    function relayRate(uint256, address) virtual external;
 }
 abstract contract DirectRateCalculator {
     function computeRate(uint256, uint256, uint256) virtual external returns (uint256);
 }
 
-contract DirectRateSetter is IncreasingTreasuryReimbursement {
+contract DirectRateSetter is GebMath {
+    // --- Auth ---
+    mapping (address => uint) public authorizedAccounts;
+    /**
+     * @notice Add auth to an account
+     * @param account Account to add auth to
+     */
+    function addAuthorization(address account) external isAuthorized {
+        authorizedAccounts[account] = 1;
+        emit AddAuthorization(account);
+    }
+    /**
+     * @notice Remove auth from an account
+     * @param account Account to remove auth from
+     */
+    function removeAuthorization(address account) external isAuthorized {
+        authorizedAccounts[account] = 0;
+        emit RemoveAuthorization(account);
+    }
+    /**
+    * @notice Checks whether msg.sender can call an authed function
+    **/
+    modifier isAuthorized {
+        require(authorizedAccounts[msg.sender] == 1, "DirectRateSetter/account-not-authorized");
+        _;
+    }
+
     // --- Variables ---
-    // Settlement flag
-    uint256 public contractEnabled;                 // [0 or 1]
     // Last recorded system coin market price
     uint256 public latestMarketPrice;               // [ray]
     // When the price feed was last updated
@@ -53,6 +77,16 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
     DirectRateCalculator      public directRateCalculator;
 
     // --- Events ---
+    event AddAuthorization(address account);
+    event RemoveAuthorization(address account);
+    event ModifyParameters(
+      bytes32 parameter,
+      address addr
+    );
+    event ModifyParameters(
+      bytes32 parameter,
+      uint256 val
+    );
     event UpdateRedemptionRate(
         uint marketPrice,
         uint redemptionPrice,
@@ -66,31 +100,34 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
       address oracleRelayer_,
       address setterRelayer_,
       address orcl_,
-      address treasury_,
       address directRateCalculator_,
-      uint256 baseUpdateCallerReward_,
-      uint256 maxUpdateCallerReward_,
-      uint256 perSecondCallerRewardIncrease_,
       uint256 updateRateDelay_
-    ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
+    ) public {
         require(oracleRelayer_ != address(0), "DirectRateSetter/null-oracle-relayer");
         require(setterRelayer_ != address(0), "DirectRateSetter/null-setter-relayer");
         require(orcl_ != address(0), "DirectRateSetter/null-orcl");
         require(directRateCalculator_ != address(0), "DirectRateSetter/null-calculator");
+
+        authorizedAccounts[msg.sender] = 1;
 
         oracleRelayer        = OracleRelayerLike(oracleRelayer_);
         setterRelayer        = SetterRelayer(setterRelayer_);
         orcl                 = OracleLike(orcl_);
         directRateCalculator = DirectRateCalculator(directRateCalculator_);
 
-        updateRateDelay    = updateRateDelay_;
-        contractEnabled    = 1;
+        updateRateDelay      = updateRateDelay_;
 
+        emit AddAuthorization(msg.sender);
         emit ModifyParameters("orcl", orcl_);
         emit ModifyParameters("oracleRelayer", oracleRelayer_);
         emit ModifyParameters("setterRelayer", setterRelayer_);
         emit ModifyParameters("directRateCalculator", directRateCalculator_);
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
+    }
+
+    // --- Boolean Logic ---
+    function either(bool x, bool y) internal pure returns (bool z) {
+        assembly{ z := or(x, y)}
     }
 
     /*
@@ -99,16 +136,11 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
     * @param addr The new contract address
     */
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
-        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
         require(addr != address(0), "DirectRateSetter/null-addr");
 
         if (parameter == "orcl") orcl = OracleLike(addr);
         else if (parameter == "oracleRelayer") oracleRelayer = OracleRelayerLike(addr);
         else if (parameter == "setterRelayer") setterRelayer = SetterRelayer(addr);
-        else if (parameter == "treasury") {
-          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "DirectRateSetter/treasury-coin-not-set");
-          treasury = StabilityFeeTreasuryLike(addr);
-        }
         else if (parameter == "directRateCalculator") {
           directRateCalculator = DirectRateCalculator(addr);
         }
@@ -124,25 +156,8 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
     * @param val The new parameter value
     */
     function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
-        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
-        if (parameter == "baseUpdateCallerReward") {
-          require(val <= maxUpdateCallerReward, "DirectRateSetter/invalid-base-caller-reward");
-          baseUpdateCallerReward = val;
-        }
-        else if (parameter == "maxUpdateCallerReward") {
-          require(val >= baseUpdateCallerReward, "DirectRateSetter/invalid-max-caller-reward");
-          maxUpdateCallerReward = val;
-        }
-        else if (parameter == "perSecondCallerRewardIncrease") {
-          require(val >= RAY, "DirectRateSetter/invalid-caller-reward-increase");
-          perSecondCallerRewardIncrease = val;
-        }
-        else if (parameter == "maxRewardIncreaseDelay") {
-          require(val > 0, "DirectRateSetter/invalid-max-increase-delay");
-          maxRewardIncreaseDelay = val;
-        }
-        else if (parameter == "updateRateDelay") {
-          require(val >= 0, "DirectRateSetter/invalid-call-gap-length");
+        require(val > 0, "DirectRateSetter/null-val");
+        if (parameter == "updateRateDelay") {
           updateRateDelay = val;
         }
         else revert("DirectRateSetter/modify-unrecognized-param");
@@ -150,12 +165,6 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
           parameter,
           val
         );
-    }
-    /*
-    * @notify Disable the rate setter
-    */
-    function disableContract() external isAuthorized {
-        contractEnabled = 0;
     }
 
     // --- Feedback Mechanism ---
@@ -165,7 +174,8 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
     *        (unless it's address(0) in which case msg.sender will get it)
     **/
     function updateRate(address feeReceiver) external {
-        require(contractEnabled == 1, "DirectRateSetter/contract-not-enabled");
+        // The fee receiver must not be null
+        require(feeReceiver != address(0), "DirectRateSetter/null-fee-receiver");
         // Check delay between calls
         require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "DirectRateSetter/wait-more");
         // Get price feed updates
@@ -176,8 +186,6 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
         require(marketPrice > 0, "DirectRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
-        // Get the caller's reward
-        uint256 callerReward = getCallerReward(lastUpdateTime, updateRateDelay);
         // Store the latest market price
         latestMarketPrice = ray(marketPrice);
         // Calculate the new rate
@@ -189,7 +197,7 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
         // Store the timestamp of the update
         lastUpdateTime = now;
         // Update the rate using the setter relayer
-        try setterRelayer.relayRate(calculated) {
+        try setterRelayer.relayRate(calculated, feeReceiver) {
           // Emit success event
           emit UpdateRedemptionRate(
             ray(marketPrice),
@@ -202,8 +210,6 @@ contract DirectRateSetter is IncreasingTreasuryReimbursement {
             revertReason
           );
         }
-        // Pay the caller for updating the rate
-        rewardCaller(feeReceiver, callerReward);
     }
 
     // --- Getters ---

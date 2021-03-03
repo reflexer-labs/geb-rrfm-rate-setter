@@ -1,70 +1,91 @@
 pragma solidity 0.6.7;
 
+import "geb-treasury-reimbursement/IncreasingTreasuryReimbursement.sol";
+
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
     function modifyParameters(bytes32,uint256) virtual external;
 }
 
-contract SetterRelayer {
-    // --- Auth ---
-    mapping (address => uint) public authorizedAccounts;
-    /**
-     * @notice Add auth to an account
-     * @param account Account to add auth to
-     */
-    function addAuthorization(address account) virtual external isAuthorized {
-        authorizedAccounts[account] = 1;
-        emit AddAuthorization(account);
-    }
-    /**
-     * @notice Remove auth from an account
-     * @param account Account to remove auth from
-     */
-    function removeAuthorization(address account) virtual external isAuthorized {
-        authorizedAccounts[account] = 0;
-        emit RemoveAuthorization(account);
-    }
-    /**
-    * @notice Checks whether msg.sender can call an authed function
-    **/
-    modifier isAuthorized {
-        require(authorizedAccounts[msg.sender] == 1, "SetterRelayer/account-not-authorized");
-        _;
-    }
-
+contract SetterRelayer is IncreasingTreasuryReimbursement {
     // --- Events ---
-    event AddAuthorization(address account);
-    event RemoveAuthorization(address account);
-    event ModifyParameters(
-      bytes32 parameter,
-      address addr
-    );
     event RelayRate(address setter, uint256 redemptionRate);
 
     // --- Variables ---
+    // When the rate has last been relayed
+    uint256           public lastUpdateTime;                      // [timestamp]
+    // Enforced gap between relays
+    uint256           public relayDelay;                          // [seconds]
     // The address that's allowed to pass new redemption rates
     address           public setter;
     // The oracle relayer contract
     OracleRelayerLike public oracleRelayer;
 
-    constructor(address oracleRelayer_) public {
-        authorizedAccounts[msg.sender] = 1;
+    constructor(
+      address oracleRelayer_,
+      address treasury_,
+      uint256 baseUpdateCallerReward_,
+      uint256 maxUpdateCallerReward_,
+      uint256 perSecondCallerRewardIncrease_,
+      uint256 relayDelay_
+    ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
+        relayDelay    = relayDelay_;
         oracleRelayer = OracleRelayerLike(oracleRelayer_);
-        emit AddAuthorization(msg.sender);
+
+        emit ModifyParameters("relayDelay", relayDelay_);
     }
 
     // --- Administration ---
     /*
-    * @notice Change the setter address
-    * @param parameter Must be "setter"
-    * @param addr The new setter address
+    * @notice Change the addresses of contracts that this relayer is connected to
+    * @param parameter The contract whose address is changed
+    * @param addr The new contract address
     */
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
         require(addr != address(0), "SetterRelayer/null-addr");
         if (parameter == "setter") {
-            setter = addr;
+          setter = addr;
+        }
+        else if (parameter == "treasury") {
+          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "SetterRelayer/treasury-coin-not-set");
+          treasury = StabilityFeeTreasuryLike(addr);
         }
         else revert("SetterRelayer/modify-unrecognized-param");
+        emit ModifyParameters(
+          parameter,
+          addr
+        );
+    }
+    /*
+    * @notify Modify a uint256 parameter
+    * @param parameter The parameter name
+    * @param val The new parameter value
+    */
+    function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
+        if (parameter == "baseUpdateCallerReward") {
+          require(val <= maxUpdateCallerReward, "SetterRelayer/invalid-base-caller-reward");
+          baseUpdateCallerReward = val;
+        }
+        else if (parameter == "maxUpdateCallerReward") {
+          require(val >= baseUpdateCallerReward, "SetterRelayer/invalid-max-caller-reward");
+          maxUpdateCallerReward = val;
+        }
+        else if (parameter == "perSecondCallerRewardIncrease") {
+          require(val >= RAY, "SetterRelayer/invalid-caller-reward-increase");
+          perSecondCallerRewardIncrease = val;
+        }
+        else if (parameter == "maxRewardIncreaseDelay") {
+          require(val > 0, "SetterRelayer/invalid-max-increase-delay");
+          maxRewardIncreaseDelay = val;
+        }
+        else if (parameter == "relayDelay") {
+          relayDelay = val;
+        }
+        else revert("SetterRelayer/modify-unrecognized-param");
+        emit ModifyParameters(
+          parameter,
+          val
+        );
     }
 
     // --- Core Logic ---
@@ -72,10 +93,22 @@ contract SetterRelayer {
     * @notice Relay a new redemption rate to the OracleRelayer
     * @param redemptionRate The new redemption rate to relay
     */
-    function relayRate(uint256 redemptionRate) external {
+    function relayRate(uint256 redemptionRate, address feeReceiver) external {
+        // Perform checks
         require(setter == msg.sender, "SetterRelayer/invalid-caller");
+        require(feeReceiver != address(0), "SetterRelayer/null-fee-receiver");
+        // Check delay between calls
+        require(either(subtract(now, lastUpdateTime) >= relayDelay, lastUpdateTime == 0), "SetterRelayer/wait-more");
+        // Get the caller's reward
+        uint256 callerReward = getCallerReward(lastUpdateTime, relayDelay);
+        // Store the timestamp of the update
+        lastUpdateTime = now;
+        // Update the redemption price and then set the rate
         oracleRelayer.redemptionPrice();
         oracleRelayer.modifyParameters("redemptionRate", redemptionRate);
+        // Emit an event
         emit RelayRate(setter, redemptionRate);
+        // Pay the caller for relaying the rate
+        rewardCaller(feeReceiver, callerReward);
     }
 }

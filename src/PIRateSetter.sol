@@ -15,7 +15,7 @@
 
 pragma solidity 0.6.7;
 
-import "geb-treasury-reimbursement/IncreasingTreasuryReimbursement.sol";
+import "geb-treasury-reimbursement/math/GebMath.sol";
 
 abstract contract OracleLike {
     function getResultWithValidity() virtual external view returns (uint256, bool);
@@ -24,7 +24,7 @@ abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
 }
 abstract contract SetterRelayer {
-    function relayRate(uint256) virtual external;
+    function relayRate(uint256, address) virtual external;
 }
 abstract contract PIDCalculator {
     function computeRate(uint256, uint256, uint256) virtual external returns (uint256);
@@ -33,10 +33,34 @@ abstract contract PIDCalculator {
     function tlv() virtual external view returns (uint256);
 }
 
-contract PIRateSetter is IncreasingTreasuryReimbursement {
+contract PIRateSetter is GebMath {
+    // --- Auth ---
+    mapping (address => uint) public authorizedAccounts;
+    /**
+     * @notice Add auth to an account
+     * @param account Account to add auth to
+     */
+    function addAuthorization(address account) external isAuthorized {
+        authorizedAccounts[account] = 1;
+        emit AddAuthorization(account);
+    }
+    /**
+     * @notice Remove auth from an account
+     * @param account Account to remove auth from
+     */
+    function removeAuthorization(address account) external isAuthorized {
+        authorizedAccounts[account] = 0;
+        emit RemoveAuthorization(account);
+    }
+    /**
+    * @notice Checks whether msg.sender can call an authed function
+    **/
+    modifier isAuthorized {
+        require(authorizedAccounts[msg.sender] == 1, "PIRateSetter/account-not-authorized");
+        _;
+    }
+
     // --- Variables ---
-    // Settlement flag
-    uint256 public contractEnabled;                 // [0 or 1]
     // Last recorded system coin market price
     uint256 public latestMarketPrice;               // [ray]
     // When the price feed was last updated
@@ -55,6 +79,16 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     PIDCalculator             public pidCalculator;
 
     // --- Events ---
+    event AddAuthorization(address account);
+    event RemoveAuthorization(address account);
+    event ModifyParameters(
+      bytes32 parameter,
+      address addr
+    );
+    event ModifyParameters(
+      bytes32 parameter,
+      uint256 val
+    );
     event UpdateRedemptionRate(
         uint marketPrice,
         uint redemptionPrice,
@@ -68,17 +102,15 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
       address oracleRelayer_,
       address setterRelayer_,
       address orcl_,
-      address treasury_,
       address pidCalculator_,
-      uint256 baseUpdateCallerReward_,
-      uint256 maxUpdateCallerReward_,
-      uint256 perSecondCallerRewardIncrease_,
       uint256 updateRateDelay_
-    ) public IncreasingTreasuryReimbursement(treasury_, baseUpdateCallerReward_, maxUpdateCallerReward_, perSecondCallerRewardIncrease_) {
+    ) public {
         require(oracleRelayer_ != address(0), "PIRateSetter/null-oracle-relayer");
         require(setterRelayer_ != address(0), "PIRateSetter/null-setter-relayer");
         require(orcl_ != address(0), "PIRateSetter/null-orcl");
         require(pidCalculator_ != address(0), "PIRateSetter/null-calculator");
+
+        authorizedAccounts[msg.sender] = 1;
 
         oracleRelayer    = OracleRelayerLike(oracleRelayer_);
         setterRelayer    = SetterRelayer(setterRelayer_);
@@ -86,13 +118,18 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
         pidCalculator    = PIDCalculator(pidCalculator_);
 
         updateRateDelay  = updateRateDelay_;
-        contractEnabled  = 1;
 
+        emit AddAuthorization(msg.sender);
         emit ModifyParameters("orcl", orcl_);
         emit ModifyParameters("oracleRelayer", oracleRelayer_);
         emit ModifyParameters("setterRelayer", setterRelayer_);
         emit ModifyParameters("pidCalculator", pidCalculator_);
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
+    }
+
+    // --- Boolean Logic ---
+    function either(bool x, bool y) internal pure returns (bool z) {
+        assembly{ z := or(x, y)}
     }
 
     // --- Management ---
@@ -102,15 +139,10 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     * @param addr The new contract address
     */
     function modifyParameters(bytes32 parameter, address addr) external isAuthorized {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
         require(addr != address(0), "PIRateSetter/null-addr");
         if (parameter == "orcl") orcl = OracleLike(addr);
         else if (parameter == "oracleRelayer") oracleRelayer = OracleRelayerLike(addr);
         else if (parameter == "setterRelayer") setterRelayer = SetterRelayer(addr);
-        else if (parameter == "treasury") {
-          require(StabilityFeeTreasuryLike(addr).systemCoin() != address(0), "PIRateSetter/treasury-coin-not-set");
-          treasury = StabilityFeeTreasuryLike(addr);
-        }
         else if (parameter == "pidCalculator") {
           pidCalculator = PIDCalculator(addr);
         }
@@ -126,25 +158,8 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     * @param val The new parameter value
     */
     function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
-        if (parameter == "baseUpdateCallerReward") {
-          require(val <= maxUpdateCallerReward, "PIRateSetter/invalid-base-caller-reward");
-          baseUpdateCallerReward = val;
-        }
-        else if (parameter == "maxUpdateCallerReward") {
-          require(val >= baseUpdateCallerReward, "PIRateSetter/invalid-max-caller-reward");
-          maxUpdateCallerReward = val;
-        }
-        else if (parameter == "perSecondCallerRewardIncrease") {
-          require(val >= RAY, "PIRateSetter/invalid-caller-reward-increase");
-          perSecondCallerRewardIncrease = val;
-        }
-        else if (parameter == "maxRewardIncreaseDelay") {
-          require(val > 0, "PIRateSetter/invalid-max-increase-delay");
-          maxRewardIncreaseDelay = val;
-        }
-        else if (parameter == "updateRateDelay") {
-          require(val >= 0, "PIRateSetter/invalid-call-gap-length");
+        require(val > 0, "PIRateSetter/null-val");
+        if (parameter == "updateRateDelay") {
           updateRateDelay = val;
         }
         else revert("PIRateSetter/modify-unrecognized-param");
@@ -152,12 +167,6 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
           parameter,
           val
         );
-    }
-    /*
-    * @notify Disable the rate setter
-    */
-    function disableContract() external isAuthorized {
-        contractEnabled = 0;
     }
 
     // --- Feedback Mechanism ---
@@ -167,7 +176,8 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
     *        (unless it's address(0) in which case msg.sender will get it)
     **/
     function updateRate(address feeReceiver) external {
-        require(contractEnabled == 1, "PIRateSetter/contract-not-enabled");
+        // The fee receiver must not be null
+        require(feeReceiver != address(0), "PIRateSetter/null-fee-receiver");
         // Check delay between calls
         require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "PIRateSetter/wait-more");
         // Get price feed updates
@@ -178,8 +188,6 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
         require(marketPrice > 0, "PIRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
-        // Get the caller's reward
-        uint256 callerReward = getCallerReward(lastUpdateTime, updateRateDelay);
         // Store the latest market price
         latestMarketPrice = ray(marketPrice);
         // Calculate the rate
@@ -193,7 +201,7 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
         // Store the timestamp of the update
         lastUpdateTime = now;
         // Update the rate using the setter relayer
-        try setterRelayer.relayRate(calculated) {
+        try setterRelayer.relayRate(calculated, feeReceiver) {
           // Emit success event
           emit UpdateRedemptionRate(
             ray(marketPrice),
@@ -206,8 +214,6 @@ contract PIRateSetter is IncreasingTreasuryReimbursement {
             revertReason
           );
         }
-        // Pay the caller for updating the rate
-        rewardCaller(feeReceiver, callerReward);
     }
 
     // --- Getters ---

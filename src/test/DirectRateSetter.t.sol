@@ -70,61 +70,46 @@ contract DirectRateSetterTest is DSTest {
         systemCoin.mint(address(treasury), coinsToMint);
 
         calculator    = new MockDirectRateCalculator();
-        setterRelayer = new SetterRelayer(address(oracleRelayer));
-        rateSetter    = new DirectRateSetter(
+        setterRelayer = new SetterRelayer(
           address(oracleRelayer),
-          address(setterRelayer),
-          address(orcl),
           address(treasury),
-          address(calculator),
           baseUpdateCallerReward,
           maxUpdateCallerReward,
           perSecondCallerRewardIncrease,
           periodSize
         );
+        rateSetter    = new DirectRateSetter(
+          address(oracleRelayer),
+          address(setterRelayer),
+          address(orcl),
+          address(calculator),
+          periodSize
+        );
 
         calculator.setRate(1E27 + 5);
-        rateSetter.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
+        setterRelayer.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
         setterRelayer.modifyParameters("setter", address(rateSetter));
 
-        treasury.setTotalAllowance(address(rateSetter), uint(-1));
-        treasury.setPerBlockAllowance(address(rateSetter), uint(-1));
+        treasury.setTotalAllowance(address(setterRelayer), uint(-1));
+        treasury.setPerBlockAllowance(address(setterRelayer), uint(-1));
     }
 
     function test_correct_setup() public {
-        assertEq(rateSetter.baseUpdateCallerReward(), baseUpdateCallerReward);
-        assertEq(rateSetter.maxUpdateCallerReward(), maxUpdateCallerReward);
-        assertEq(rateSetter.perSecondCallerRewardIncrease(), perSecondCallerRewardIncrease);
-        assertEq(rateSetter.contractEnabled(), 1);
+        assertEq(rateSetter.authorizedAccounts(address(this)), 1);
+        assertEq(rateSetter.updateRateDelay(), periodSize);
     }
     function test_modify_parameters() public {
         // Modify
-        MockTreasury newTreasury = new MockTreasury(address(systemCoin));
-
         rateSetter.modifyParameters("orcl", address(0x12));
         rateSetter.modifyParameters("oracleRelayer", address(0x12));
-        rateSetter.modifyParameters("treasury", address(newTreasury));
         rateSetter.modifyParameters("directRateCalculator", address(0x12));
-
-        rateSetter.modifyParameters("baseUpdateCallerReward", 1);
-        rateSetter.modifyParameters("maxUpdateCallerReward", 2);
-        rateSetter.modifyParameters("perSecondCallerRewardIncrease", RAY);
         rateSetter.modifyParameters("updateRateDelay", 1);
 
         // Check
         assertTrue(address(rateSetter.orcl()) == address(0x12));
         assertTrue(address(rateSetter.oracleRelayer()) == address(0x12));
-        assertTrue(address(rateSetter.treasury()) == address(newTreasury));
         assertTrue(address(rateSetter.directRateCalculator()) == address(0x12));
-
-        assertEq(rateSetter.baseUpdateCallerReward(), 1);
-        assertEq(rateSetter.maxUpdateCallerReward(), 2);
-        assertEq(rateSetter.perSecondCallerRewardIncrease(), RAY);
         assertEq(rateSetter.updateRateDelay(), 1);
-    }
-    function test_disable() public {
-        rateSetter.disableContract();
-        assertEq(rateSetter.contractEnabled(), 0);
     }
     function test_get_redemption_and_market_prices() public {
         (uint marketPrice, uint redemptionPrice) = rateSetter.getRedemptionAndMarketPrices();
@@ -164,8 +149,8 @@ contract DirectRateSetterTest is DSTest {
 
         hevm.warp(now + periodSize * 100000 + 1);
         assertEq(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay(), 359996401);
-        assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > rateSetter.maxRewardIncreaseDelay());
-        assertEq(rateSetter.getCallerReward(rateSetter.lastUpdateTime(), rateSetter.updateRateDelay()), maxUpdateCallerReward);
+        assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > setterRelayer.maxRewardIncreaseDelay());
+        assertEq(setterRelayer.getCallerReward(setterRelayer.lastUpdateTime(), setterRelayer.relayDelay()), maxUpdateCallerReward);
 
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);
