@@ -97,6 +97,7 @@ contract SetterRelayer is IncreasingTreasuryReimbursement {
         // Perform checks
         require(setter == msg.sender, "SetterRelayer/invalid-caller");
         require(feeReceiver != address(0), "SetterRelayer/null-fee-receiver");
+        require(feeReceiver != setter, "SetterRelayer/setter-cannot-receive-fees");
         // Check delay between calls
         require(either(subtract(now, lastUpdateTime) >= relayDelay, lastUpdateTime == 0), "SetterRelayer/wait-more");
         // Get the caller's reward
