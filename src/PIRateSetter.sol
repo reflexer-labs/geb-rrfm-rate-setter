@@ -218,7 +218,7 @@ contract PIRateSetter is GebMath {
           emit FailUpdateRedemptionRate(
             ray(marketPrice),
             redemptionPrice,
-            calculated
+            calculated,
             revertReason
           );
         }

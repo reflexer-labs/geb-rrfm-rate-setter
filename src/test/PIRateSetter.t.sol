@@ -166,6 +166,19 @@ contract PIRateSetterTest is DSTest {
         rateSetter.updateRate(address(0x123));
         assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);
     }
+    function test_null_default_leak() public {
+        rateSetter.modifyParameters("defaultLeak", 1);
+
+        hevm.warp(now + periodSize);
+        rateSetter.updateRate(address(0x123));
+        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
+
+        hevm.warp(now + periodSize);
+        rateSetter.updateRate(address(0x123));
+        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward * 2);
+        assertEq(oracleRelayer.redemptionRate(), RAY + 2);
+    }
     function test_oracle_relayer_bounded_rate() public {
         oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 1);
         oracleRelayer.modifyParameters("redemptionRateLowerBound", RAY - 1);
