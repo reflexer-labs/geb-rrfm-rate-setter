@@ -61,12 +61,12 @@ contract PIRateSetter is GebMath {
     }
 
     // --- Variables ---
-    // Last recorded system coin market price
-    uint256 public latestMarketPrice;               // [ray]
     // When the price feed was last updated
     uint256 public lastUpdateTime;                  // [timestamp]
     // Enforced gap between calls
     uint256 public updateRateDelay;                 // [seconds]
+    // Whether the leak is set to zero by default
+    uint256 public defaultLeak;                     // [0 or 1]
 
     // --- System Dependencies ---
     // OSM or medianizer for the system coin
@@ -95,6 +95,9 @@ contract PIRateSetter is GebMath {
         uint redemptionRate
     );
     event FailUpdateRedemptionRate(
+        uint marketPrice,
+        uint redemptionPrice,
+        uint redemptionRate,
         bytes reason
     );
 
@@ -111,6 +114,7 @@ contract PIRateSetter is GebMath {
         require(pidCalculator_ != address(0), "PIRateSetter/null-calculator");
 
         authorizedAccounts[msg.sender] = 1;
+        defaultLeak                    = 1;
 
         oracleRelayer    = OracleRelayerLike(oracleRelayer_);
         setterRelayer    = SetterRelayer(setterRelayer_);
@@ -158,9 +162,13 @@ contract PIRateSetter is GebMath {
     * @param val The new parameter value
     */
     function modifyParameters(bytes32 parameter, uint256 val) external isAuthorized {
-        require(val > 0, "PIRateSetter/null-val");
         if (parameter == "updateRateDelay") {
+          require(val > 0, "PIRateSetter/null-update-delay");
           updateRateDelay = val;
+        }
+        else if (parameter == "defaultLeak") {
+          require(val <= 1, "PIRateSetter/invalid-default-leak");
+          defaultLeak = val;
         }
         else revert("PIRateSetter/modify-unrecognized-param");
         emit ModifyParameters(
@@ -188,11 +196,8 @@ contract PIRateSetter is GebMath {
         require(marketPrice > 0, "PIRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
-        // Store the latest market price
-        latestMarketPrice = ray(marketPrice);
         // Calculate the rate
-        uint256 tlv        = pidCalculator.tlv();
-        uint256 iapcr      = rpower(pidCalculator.pscl(), tlv, RAY);
+        uint256 iapcr      = (defaultLeak == 1) ? RAY : rpower(pidCalculator.pscl(), pidCalculator.tlv(), RAY);
         uint256 calculated = pidCalculator.computeRate(
             marketPrice,
             redemptionPrice,
@@ -211,6 +216,9 @@ contract PIRateSetter is GebMath {
         }
         catch(bytes memory revertReason) {
           emit FailUpdateRedemptionRate(
+            ray(marketPrice),
+            redemptionPrice,
+            calculated
             revertReason
           );
         }

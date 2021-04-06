@@ -85,6 +85,8 @@ contract PIRateSetterTest is DSTest {
           address(calculator),
           periodSize
         );
+        rateSetter.modifyParameters("defaultLeak", 0);
+
         setterRelayer.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
         setterRelayer.modifyParameters("setter", address(rateSetter));
 

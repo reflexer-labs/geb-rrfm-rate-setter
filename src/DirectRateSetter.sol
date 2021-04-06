@@ -59,8 +59,6 @@ contract DirectRateSetter is GebMath {
     }
 
     // --- Variables ---
-    // Last recorded system coin market price
-    uint256 public latestMarketPrice;               // [ray]
     // When the price feed was last updated
     uint256 public lastUpdateTime;                  // [timestamp]
     // Enforced gap between calls
@@ -93,6 +91,9 @@ contract DirectRateSetter is GebMath {
         uint redemptionRate
     );
     event FailUpdateRedemptionRate(
+        uint marketPrice,
+        uint redemptionPrice,
+        uint redemptionRate,
         bytes reason
     );
 
@@ -186,8 +187,6 @@ contract DirectRateSetter is GebMath {
         require(marketPrice > 0, "DirectRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
-        // Store the latest market price
-        latestMarketPrice = ray(marketPrice);
         // Calculate the new rate
         uint256 calculated = directRateCalculator.computeRate(
             marketPrice,
@@ -207,6 +206,9 @@ contract DirectRateSetter is GebMath {
         }
         catch(bytes memory revertReason) {
           emit FailUpdateRedemptionRate(
+            ray(marketPrice),
+            redemptionPrice,
+            calculated,
             revertReason
           );
         }
