@@ -1,6 +1,6 @@
 pragma solidity 0.6.7;
 
-import "geb-treasury-reimbursement/reimbursement/IncreasingTreasuryReimbursement.sol";
+import "geb-treasury-reimbursement/reimbursement/single/IncreasingTreasuryReimbursement.sol";
 
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
