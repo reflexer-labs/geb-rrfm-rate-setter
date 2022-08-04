@@ -81,12 +81,13 @@ contract PIControllerRateSetter is GebMath {
     // Flag indicating that the rate computed is per second
     uint256 constant internal defaultGlobalTimeline = 1;
 
-    uint256 internal constant NEGATIVE_RATE_LIMIT         = TWENTY_SEVEN_DECIMAL_NUMBER - 1;
+    // Constants
+    uint256 internal constant NEGATIVE_RATE_LIMIT = TWENTY_SEVEN_DECIMAL_NUMBER - 1;
     uint256 internal constant EIGHTEEN_DECIMAL_NUMBER = 10 ** 18;
     uint256 internal constant TWENTY_SEVEN_DECIMAL_NUMBER = 10 ** 27;
 
     // The default redemption rate to use in case error is smaller than noiseBarrier
-    uint256 internal defaultRedemptionRate = TWENTY_SEVEN_DECIMAL_NUMBER;          // [TWENTY_SEVEN_DECIMAL_NUMBER]
+    uint256 internal defaultRedemptionRate = TWENTY_SEVEN_DECIMAL_NUMBER;
 
     // --- Events ---
     event AddAuthorization(address account);
@@ -154,16 +155,6 @@ contract PIControllerRateSetter is GebMath {
     function both(bool x, bool y) internal pure returns (bool z) {
         assembly{ z := and(x, y)}
     }
-    function divide(uint256 a, uint256 b) internal pure returns (uint256) {
-        return divide(a, b, "SafeMath: division by zero");
-    }
-    function divide(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b > 0, errorMessage);
-        uint256 c = a / b;
-        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-
-        return c;
-    }
     function absolute(int x) internal pure returns (uint z) {
         z = (x < 0) ? uint(-x) : uint(x);
     }
@@ -209,7 +200,7 @@ contract PIControllerRateSetter is GebMath {
           updateRateDelay = val;
         }
         else if (parameter == "noiseBarrier") {
-          require(both(val >= 0, val <= 0.1E27), "PIRateSetter/invalid-noise-barrier");
+          require(both(val >= 0, val <= 0.2E27), "PIRateSetter/invalid-noise-barrier");
           noiseBarrier = val;
         }
         else revert("PIRateSetter/modify-unrecognized-param");
@@ -235,12 +226,12 @@ contract PIControllerRateSetter is GebMath {
         return c;
     }
     /*
-    * @notice Calculates relative_error = (reference-measured)/reference 
+    * @notice Calculates relativeError = (reference-measured)/reference 
     * @param measuredValue EIGHTEEEN_DECIMAL_NUMBER
     * @param referenceValue TWENTY_SEVEN_DECIMAL_NUMBER
     * @return relativeError TWENTY_SEVEN_DECIMAL_NUMBER
     */
-    function relative_error(uint256 measuredValue, uint256 referenceValue) internal pure returns (int256) {
+    function relativeError(uint256 measuredValue, uint256 referenceValue) internal pure returns (int256) {
         uint256 scaledMeasuredValue = multiply(measuredValue, 10**9);
         int256 relativeError = multiply(subtract(int(referenceValue), int(scaledMeasuredValue)),
                                         int(TWENTY_SEVEN_DECIMAL_NUMBER)) / int(referenceValue);
@@ -251,29 +242,6 @@ contract PIControllerRateSetter is GebMath {
     * @notice Return a redemption rate bounded 
     * @param piOutput The raw controller output, the delta rate
     */
-    function getBoundedRedemptionRateOrig(int piOutput) public view returns (uint256) {
-        uint newRedemptionRate;
-
-        // newRedemptionRate cannot be lower than 10^0 (1) because of the way rpower is designed
-        //bool negativeOutputExceedsHundred = (piOutput < 0 && -piOutput >= int(defaultRedemptionRate));
-        bool negativeOutputExceedsHundred = (piOutput < 0 && -piOutput >= int(TWENTY_SEVEN_DECIMAL_NUMBER));
-
-        // If it is smaller than 1, set it to the nagative rate limit
-        if (negativeOutputExceedsHundred) {
-          newRedemptionRate = NEGATIVE_RATE_LIMIT;
-        } else {
-        // If piOutput is lower than -int(NEGATIVE_RATE_LIMIT) set newRedemptionRate to 1
-          if (piOutput < 0 && piOutput <= -int(NEGATIVE_RATE_LIMIT)) {
-            newRedemptionRate = uint(addition(int(defaultRedemptionRate), -int(NEGATIVE_RATE_LIMIT)));
-          } else {
-            // Otherwise add defaultRedemptionRate and piOutput together
-            newRedemptionRate = uint(addition(int(defaultRedemptionRate), piOutput));
-          }
-        }
-
-        return newRedemptionRate;
-    }
-
     function getBoundedRedemptionRate(int piOutput) public view returns (uint256) {
         int newRedemptionRate = addition(int(defaultRedemptionRate), piOutput);
         return newRedemptionRate < 1 ? uint(1) : uint(newRedemptionRate);
@@ -298,7 +266,7 @@ contract PIControllerRateSetter is GebMath {
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
 
-        int256 error = relative_error(marketPrice, redemptionPrice);
+        int256 error = relativeError(marketPrice, redemptionPrice);
 
         if (absolute(error) <= noiseBarrier) {
           error = 0;
