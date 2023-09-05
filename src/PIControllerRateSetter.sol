@@ -76,18 +76,12 @@ contract PIControllerRateSetter is GebMath {
     PIController            public piController;
     // The minimum percentage deviation from the redemption price that allows the contract
     // to calculate a non null redemption rate
-    uint256 noiseBarrier;                   // [EIGHTEEN_DECIMAL_NUMBER]
-
-    // Flag indicating that the rate computed is per second
-    uint256 constant internal defaultGlobalTimeline = 1;
+    uint256 noiseBarrier;                   // [TWENTY_SEVEN_DECIMAL_NUMBER]
 
     // Constants
     uint256 internal constant NEGATIVE_RATE_LIMIT = TWENTY_SEVEN_DECIMAL_NUMBER - 1;
     uint256 internal constant EIGHTEEN_DECIMAL_NUMBER = 10 ** 18;
     uint256 internal constant TWENTY_SEVEN_DECIMAL_NUMBER = 10 ** 27;
-
-    // The default redemption rate to use in case error is smaller than noiseBarrier
-    uint256 internal defaultRedemptionRate = TWENTY_SEVEN_DECIMAL_NUMBER;
 
     // --- Events ---
     event AddAuthorization(address account);
@@ -237,14 +231,8 @@ contract PIControllerRateSetter is GebMath {
                                         int(TWENTY_SEVEN_DECIMAL_NUMBER)) / int(referenceValue);
         return relativeError;
     }
-
-    /*
-    * @notice Return a redemption rate bounded 
-    * @param piOutput The raw controller output, the delta rate
-    */
-    function getBoundedRedemptionRate(int piOutput) public view returns (uint256) {
-        int newRedemptionRate = addition(int(defaultRedemptionRate), piOutput);
-        return newRedemptionRate < 1 ? uint(1) : uint(newRedemptionRate);
+    function getRedemptionRate(int256 piOutput) public pure returns (uint) {
+        return uint(addition(int(TWENTY_SEVEN_DECIMAL_NUMBER), piOutput));
     }
 
     // --- Feedback Mechanism ---
@@ -276,10 +264,7 @@ contract PIControllerRateSetter is GebMath {
         // 1 + output = per-second redemption rate
         (int256 output, int256 pOutput, int256 iOutput) = piController.update(error);
 
-        uint newRedemptionRate = getBoundedRedemptionRate(output);
-
-        // Store the timestamp of the update
-        lastUpdateTime = now;
+        uint newRedemptionRate = getRedemptionRate(output);
 
         // Update the rate using the setter relayer
         try setterRelayer.relayRate(newRedemptionRate, feeReceiver) {
@@ -302,6 +287,9 @@ contract PIControllerRateSetter is GebMath {
             revertReason
           );
         }
+
+        // Store the timestamp of the update
+        lastUpdateTime = now;
     }
 
     // --- Getters ---
