@@ -286,6 +286,7 @@ contract PIControllerRateSetter is GebMath {
             iOutput,
             revertReason
           );
+          return;
         }
 
         // Store the timestamp of the update
