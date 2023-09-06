@@ -122,7 +122,7 @@ contract PIControllerRateSetter is GebMath {
         require(setterRelayer_ != address(0), "PIRateSetter/null-setter-relayer");
         require(orcl_ != address(0), "PIRateSetter/null-orcl");
         require(piController_ != address(0), "PIRateSetter/null-controller");
-        require(both(noiseBarrier_ >= 0, noiseBarrier_ <= 0.5E27), "PIRateSetter/invalid-noise-barrier");
+        require(both(noiseBarrier_ >= 0, noiseBarrier_ <= 0.2E27), "PIRateSetter/invalid-noise-barrier");
 
         authorizedAccounts[msg.sender] = 1;
 
@@ -227,9 +227,9 @@ contract PIControllerRateSetter is GebMath {
     */
     function relativeError(uint256 measuredValue, uint256 referenceValue) internal pure returns (int256) {
         uint256 scaledMeasuredValue = multiply(measuredValue, 10**9);
-        int256 relativeError = multiply(subtract(int(referenceValue), int(scaledMeasuredValue)),
+        int256 error = multiply(subtract(int(referenceValue), int(scaledMeasuredValue)),
                                         int(TWENTY_SEVEN_DECIMAL_NUMBER)) / int(referenceValue);
-        return relativeError;
+        return error;
     }
     function getRedemptionRate(int256 piOutput) public pure returns (uint) {
         return uint(addition(int(TWENTY_SEVEN_DECIMAL_NUMBER), piOutput));
