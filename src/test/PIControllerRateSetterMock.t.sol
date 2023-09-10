@@ -6,7 +6,6 @@ import "ds-token/token.sol";
 import {MockPIController} from '../mock/MockPIController.sol';
 import {PIController} from 'geb-rrfm-calculators/controller/PIController.sol';
 import {PIControllerRateSetter} from "../PIControllerRateSetter.sol";
-import {SetterRelayer} from "../SetterRelayer.sol";
 
 import "../mock/MockOracleRelayer.sol";
 import "../mock/MockTreasury.sol";
@@ -42,7 +41,6 @@ contract PIRateSetterMockControllerTest is DSTest {
     MockOracleRelayer oracleRelayer;
 
     PIControllerRateSetter rateSetter;
-    SetterRelayer setterRelayer;
 
     MockPIController controller;
     uint256 noiseBarrier = 0E27;
@@ -73,28 +71,14 @@ contract PIRateSetterMockControllerTest is DSTest {
 
         controller    = new MockPIController();
         noiseBarrier = WAD;
-        setterRelayer = new SetterRelayer(
-          address(oracleRelayer),
-          address(treasury),
-          baseUpdateCallerReward,
-          maxUpdateCallerReward,
-          perSecondCallerRewardIncrease,
-          periodSize
-        );
         rateSetter    = new PIControllerRateSetter(
           address(oracleRelayer),
-          address(setterRelayer),
           address(orcl),
           address(controller),
           noiseBarrier,
           periodSize
         );
 
-        setterRelayer.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
-        setterRelayer.modifyParameters("setter", address(rateSetter));
-
-        treasury.setTotalAllowance(address(setterRelayer), uint(-1));
-        treasury.setPerBlockAllowance(address(setterRelayer), uint(-1));
     }
     function test_correct_setup() public {
         assertEq(rateSetter.authorizedAccounts(address(this)), 1);
@@ -133,65 +117,47 @@ contract PIRateSetterMockControllerTest is DSTest {
         assertEq(1E27 + smallNegOutput, int(rate));
     }
     function test_first_update_rate_no_warp() public {
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function test_first_update_rate_with_warp() public {
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function testFail_update_before_period_passed() public {
-        rateSetter.updateRate(address(0x123));
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
+        rateSetter.updateRate();
     }
     function test_two_updates() public {
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 2);
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward * 2);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 2);
     }
     function test_null_rate_needed_submit_different() public {
         controller.toggleValidated();
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY - 2);
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY - 2);
-    }
-    function test_wait_more_than_maxRewardIncreaseDelay_since_last_update() public {
-        hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-
-        hevm.warp(now + periodSize * 100000 + 1);
-        assertEq(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay(), periodSize * 100000 + 1 - periodSize);
-        assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > setterRelayer.maxRewardIncreaseDelay());
-        assertEq(setterRelayer.getCallerReward(setterRelayer.lastUpdateTime(), setterRelayer.relayDelay()), maxUpdateCallerReward);
-
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);
     }
     function test_oracle_relayer_bounded_rate() public {
         oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 1);
         oracleRelayer.modifyParameters("redemptionRateLowerBound", RAY - 1);
 
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 1);
 
         controller.toggleValidated();
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY - 1);
     }
 }

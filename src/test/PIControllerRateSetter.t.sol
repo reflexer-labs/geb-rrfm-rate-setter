@@ -6,10 +6,8 @@ import "ds-token/token.sol";
 import {MockPIController} from '../mock/MockPIController.sol';
 import {PIController} from 'geb-rrfm-calculators/controller/PIController.sol';
 import {PIControllerRateSetter} from "../PIControllerRateSetter.sol";
-import {SetterRelayer} from "../SetterRelayer.sol";
 
 import "../mock/MockOracleRelayer.sol";
-import "../mock/MockTreasury.sol";
 import "geb-treasury-reimbursement/math/GebMath.sol";
 contract Feed {
     bytes32 public price;
@@ -49,11 +47,9 @@ contract PIRateSetterTest is DSTest {
     Hevm hevm;
 
     DSToken systemCoin;
-    MockTreasury treasury;
     MockOracleRelayer oracleRelayer;
 
     PIControllerRateSetter rateSetter;
-    SetterRelayer setterRelayer;
 
     PIController controller;
     uint256 noiseBarrier = 0E27;
@@ -78,35 +74,19 @@ contract PIRateSetterTest is DSTest {
 
         oracleRelayer = new MockOracleRelayer();
         orcl = new Feed(1 ether, true);
-        treasury = new MockTreasury(address(systemCoin));
 
-        systemCoin.mint(address(treasury), coinsToMint);
         controller = new PIController(CONTROL_VARIABLE, KP, KI, BIAS, PSCL, int256(UB), LB, IMPORTED_STATE);
         noiseBarrier = 0;
-        setterRelayer = new SetterRelayer(
-          address(oracleRelayer),
-          address(treasury),
-          baseUpdateCallerReward,
-          maxUpdateCallerReward,
-          perSecondCallerRewardIncrease,
-          periodSize
-        );
         rateSetter    = new PIControllerRateSetter(
           address(oracleRelayer),
-          address(setterRelayer),
           address(orcl),
           address(controller),
           noiseBarrier,
           periodSize
         );
 
-        setterRelayer.modifyParameters("maxRewardIncreaseDelay", maxRewardIncreaseDelay);
-        setterRelayer.modifyParameters("setter", address(rateSetter));
-
         controller.modifyParameters("seedProposer", address(rateSetter));
 
-        treasury.setTotalAllowance(address(setterRelayer), uint(-1));
-        treasury.setPerBlockAllowance(address(setterRelayer), uint(-1));
     }
     function test_correct_setup() public {
         assertEq(rateSetter.authorizedAccounts(address(this)), 1);
@@ -145,119 +125,93 @@ contract PIRateSetterTest is DSTest {
         assertEq(1E27 + smallNegOutput, int(rate));
     }
     function test_first_update_rate_no_warp() public {
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
     }
     function test_first_update_rate_no_warp_neg_error() public {
         orcl.updateTokenPrice(1.1 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertTrue(oracleRelayer.redemptionRate() < RAY);
     }
     function test_first_update_rate_no_warp_pos_error() public {
         orcl.updateTokenPrice(0.90 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertTrue(oracleRelayer.redemptionRate() > RAY);
     }
     function test_first_update_rate_no_warp_upper_bound() public {
         orcl.updateTokenPrice(0.01 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(int256(oracleRelayer.redemptionRate()), int256(10**27 + controller.outputUpperBound()));
     }
     function test_first_update_rate_no_warp_lower_bound() public {
         orcl.updateTokenPrice(10 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(int256(oracleRelayer.redemptionRate()), int256(10**27 + controller.outputLowerBound()));
     }
     function test_first_update_rate_with_warp() public {
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
     }
     function test_first_update_rate_with_warp_neg_error() public {
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(1.1 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertTrue(oracleRelayer.redemptionRate() < RAY);
     }
     function test_first_update_rate_with_warp_pos_error() public {
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(0.90 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertTrue(oracleRelayer.redemptionRate() > RAY);
     }
     function test_first_update_rate_with_warp_upper_bound() public {
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(0.01 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(int256(oracleRelayer.redemptionRate()), int256(10**27 + controller.outputUpperBound()));
     }
     function test_first_update_rate_with_warp_lower_bound() public {
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(10 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(int256(oracleRelayer.redemptionRate()), int256(10**27 + controller.outputLowerBound()));
     }
     function testFail_update_before_period_passed() public {
-        rateSetter.updateRate(address(0x123));
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
+        rateSetter.updateRate();
     }
     function test_two_updates() public {
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(1.1 ether);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         uint256 rate1 = oracleRelayer.redemptionRate();
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward * 2);
+        rateSetter.updateRate();
         uint256 rate2 = oracleRelayer.redemptionRate();
         assertTrue(rate2 < rate1);
     }
     function test_null_rate_needed_submit_different() public {
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
 
         hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
-    }
-    function test_wait_more_than_maxRewardIncreaseDelay_since_last_update() public {
-        hevm.warp(now + periodSize);
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward);
-
-        hevm.warp(now + periodSize * 100000 + 1);
-        assertEq(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay(), periodSize * 100000 + 1 - periodSize);
-        assertTrue(now - rateSetter.lastUpdateTime() - rateSetter.updateRateDelay() > setterRelayer.maxRewardIncreaseDelay());
-        assertEq(setterRelayer.getCallerReward(setterRelayer.lastUpdateTime(), setterRelayer.relayDelay()), maxUpdateCallerReward);
-
-        rateSetter.updateRate(address(0x123));
-        assertEq(systemCoin.balanceOf(address(0x123)), baseUpdateCallerReward + maxUpdateCallerReward);
     }
     function test_oracle_relayer_bounded_rate() public {
         oracleRelayer.modifyParameters("redemptionRateUpperBound", RAY + 1);
         oracleRelayer.modifyParameters("redemptionRateLowerBound", RAY - 1);
 
         orcl.updateTokenPrice(1.01 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY - 1);
 
 
         hevm.warp(now + periodSize);
         orcl.updateTokenPrice(0.99 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY + 1);
     }
     function test_noise_barrier() public {
@@ -265,7 +219,7 @@ contract PIRateSetterTest is DSTest {
         // neg error below noiseBarrier -> no rate
         rateSetter.modifyParameters("noiseBarrier", 0.10E27);
         orcl.updateTokenPrice(1.05 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
 
         hevm.warp(now + periodSize);
@@ -273,7 +227,7 @@ contract PIRateSetterTest is DSTest {
         // pos error below noiseBarrier -> no rate
         rateSetter.modifyParameters("noiseBarrier", 0.10E27);
         orcl.updateTokenPrice(0.95 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assertEq(oracleRelayer.redemptionRate(), RAY);
 
         hevm.warp(now + periodSize);
@@ -281,7 +235,7 @@ contract PIRateSetterTest is DSTest {
         // neg error above noiseBarrier -> neg rate
         rateSetter.modifyParameters("noiseBarrier", 0.01E27);
         orcl.updateTokenPrice(1.05 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assert(oracleRelayer.redemptionRate() <  RAY);
 
         hevm.warp(now + periodSize);
@@ -289,7 +243,7 @@ contract PIRateSetterTest is DSTest {
         // pos error above noiseBarrier -> pos rate
         rateSetter.modifyParameters("noiseBarrier", 0.01E27);
         orcl.updateTokenPrice(0.95 ether);
-        rateSetter.updateRate(address(0x123));
+        rateSetter.updateRate();
         assert(oracleRelayer.redemptionRate() > RAY);
 
     }
