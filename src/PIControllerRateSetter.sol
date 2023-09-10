@@ -24,9 +24,6 @@ abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
     function modifyParameters(bytes32,uint256) virtual external;
 }
-abstract contract SetterRelayer {
-    function relayRate(uint256, address) virtual external;
-}
 abstract contract PIController {
     function update(int256) virtual external returns (int256, int256, int256);
     function perSecondIntegralLeak() virtual external view returns (uint256);
@@ -272,7 +269,7 @@ contract PIControllerRateSetter is GebMath {
         uint newRedemptionRate = getRedemptionRate(output);
 
         // Update rate
-		oracleRelayer.modifyParameters("redemptionRate", newRedemptionRate);
+        oracleRelayer.modifyParameters("redemptionRate", newRedemptionRate);
 
         // Store the timestamp of the update
         lastUpdateTime = now;
