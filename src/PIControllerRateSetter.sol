@@ -22,14 +22,13 @@ abstract contract OracleLike {
 }
 abstract contract OracleRelayerLike {
     function redemptionPrice() virtual external returns (uint256);
-}
-abstract contract SetterRelayer {
-    function relayRate(uint256, address) virtual external;
+    function modifyParameters(bytes32,uint256) virtual external;
 }
 abstract contract PIController {
     function update(int256) virtual external returns (int256, int256, int256);
     function perSecondIntegralLeak() virtual external view returns (uint256);
     function elapsed() virtual external view returns (uint256);
+    function getNextPiOutput(int error) virtual public view returns (int256, int256, int256);
 }
 
 contract PIControllerRateSetter is GebMath {
@@ -70,24 +69,16 @@ contract PIControllerRateSetter is GebMath {
     OracleLike                public orcl;
     // OracleRelayer where the redemption price is stored
     OracleRelayerLike         public oracleRelayer;
-    // The contract that will pass the new redemption rate to the oracle relayer
-    SetterRelayer             public setterRelayer;
     // Controller for the redemption rate
     PIController            public piController;
     // The minimum percentage deviation from the redemption price that allows the contract
     // to calculate a non null redemption rate
-    uint256 noiseBarrier;                   // [EIGHTEEN_DECIMAL_NUMBER]
-
-    // Flag indicating that the rate computed is per second
-    uint256 constant internal defaultGlobalTimeline = 1;
+    uint256 noiseBarrier;                   // [TWENTY_SEVEN_DECIMAL_NUMBER]
 
     // Constants
     uint256 internal constant NEGATIVE_RATE_LIMIT = TWENTY_SEVEN_DECIMAL_NUMBER - 1;
     uint256 internal constant EIGHTEEN_DECIMAL_NUMBER = 10 ** 18;
     uint256 internal constant TWENTY_SEVEN_DECIMAL_NUMBER = 10 ** 27;
-
-    // The default redemption rate to use in case error is smaller than noiseBarrier
-    uint256 internal defaultRedemptionRate = TWENTY_SEVEN_DECIMAL_NUMBER;
 
     // --- Events ---
     event AddAuthorization(address account);
@@ -118,22 +109,19 @@ contract PIControllerRateSetter is GebMath {
 
     constructor(
       address oracleRelayer_,
-      address setterRelayer_,
       address orcl_,
       address piController_,
       uint256 noiseBarrier_,
       uint256 updateRateDelay_
     ) public {
         require(oracleRelayer_ != address(0), "PIRateSetter/null-oracle-relayer");
-        require(setterRelayer_ != address(0), "PIRateSetter/null-setter-relayer");
         require(orcl_ != address(0), "PIRateSetter/null-orcl");
         require(piController_ != address(0), "PIRateSetter/null-controller");
-        require(both(noiseBarrier_ >= 0, noiseBarrier_ <= 0.5E27), "PIRateSetter/invalid-noise-barrier");
+        require(both(noiseBarrier_ >= 0, noiseBarrier_ <= 0.2E27), "PIRateSetter/invalid-noise-barrier");
 
         authorizedAccounts[msg.sender] = 1;
 
         oracleRelayer    = OracleRelayerLike(oracleRelayer_);
-        setterRelayer    = SetterRelayer(setterRelayer_);
         orcl             = OracleLike(orcl_);
         piController    = PIController(piController_);
         noiseBarrier                    = noiseBarrier_;
@@ -143,7 +131,6 @@ contract PIControllerRateSetter is GebMath {
         emit AddAuthorization(msg.sender);
         emit ModifyParameters("orcl", orcl_);
         emit ModifyParameters("oracleRelayer", oracleRelayer_);
-        emit ModifyParameters("setterRelayer", setterRelayer_);
         emit ModifyParameters("piController", piController_);
         emit ModifyParameters("updateRateDelay", updateRateDelay_);
     }
@@ -179,7 +166,6 @@ contract PIControllerRateSetter is GebMath {
         require(addr != address(0), "PIRateSetter/null-addr");
         if (parameter == "orcl") orcl = OracleLike(addr);
         else if (parameter == "oracleRelayer") oracleRelayer = OracleRelayerLike(addr);
-        else if (parameter == "setterRelayer") setterRelayer = SetterRelayer(addr);
         else if (parameter == "piController") {
           piController = PIController(addr);
         }
@@ -233,36 +219,40 @@ contract PIControllerRateSetter is GebMath {
     */
     function relativeError(uint256 measuredValue, uint256 referenceValue) internal pure returns (int256) {
         uint256 scaledMeasuredValue = multiply(measuredValue, 10**9);
-        int256 relativeError = multiply(subtract(int(referenceValue), int(scaledMeasuredValue)),
+        int256 error = multiply(subtract(int(referenceValue), int(scaledMeasuredValue)),
                                         int(TWENTY_SEVEN_DECIMAL_NUMBER)) / int(referenceValue);
-        return relativeError;
+        return error;
     }
 
     /*
-    * @notice Return a redemption rate bounded 
-    * @param piOutput The raw controller output, the delta rate
+    * @notice Convert per-second delta rate to per-second redemption rate
+    * @param piOutput TWENTY_SEVEN_DECIMAL_NUMBER
+    * @return redemptionRate TWENTY_SEVEN_DECIMAL_NUMBER
     */
-    function getBoundedRedemptionRate(int piOutput) public view returns (uint256) {
-        int newRedemptionRate = addition(int(defaultRedemptionRate), piOutput);
-        return newRedemptionRate < 1 ? uint(1) : uint(newRedemptionRate);
+    function getRedemptionRate(int256 piOutput) public pure returns (uint) {
+        return uint(addition(int(TWENTY_SEVEN_DECIMAL_NUMBER), piOutput));
     }
 
-    // --- Feedback Mechanism ---
+    /*
+    * @notice Relay a new redemption rate to the OracleRelayer
+    * @param redemptionRate The new redemption rate to relay TWENTY_SEVEN_DECIMAL_NUMBER
+    */
+    function relayRate(uint256 redemptionRate) internal {
+        oracleRelayer.modifyParameters("redemptionRate", redemptionRate);
+    }
+
     /**
     * @notice Compute and set a new redemption rate
-    * @param feeReceiver The proposed address that should receive the reward for calling this function
     **/
-    function updateRate(address feeReceiver) external {
-        // The fee receiver must not be null
-        require(feeReceiver != address(0), "PIRateSetter/null-fee-receiver");
+    function updateRate() external {
         // Check delay between calls
-        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "PIRateSetter/wait-more");
+        require(either(subtract(now, lastUpdateTime) >= updateRateDelay, lastUpdateTime == 0), "PIControllerRateSetter/wait-more");
         // Get price feed updates
         (uint256 marketPrice, bool hasValidValue) = orcl.getResultWithValidity();
         // If the oracle has a value
-        require(hasValidValue, "PIRateSetter/invalid-oracle-value");
+        require(hasValidValue, "PIControllerRateSetter/invalid-oracle-value");
         // If the price is non-zero
-        require(marketPrice > 0, "PIRateSetter/null-price");
+        require(marketPrice > 0, "PIControllerRateSetter/null-price");
         // Get the latest redemption price
         uint redemptionPrice = oracleRelayer.redemptionPrice();
 
@@ -276,32 +266,23 @@ contract PIControllerRateSetter is GebMath {
         // 1 + output = per-second redemption rate
         (int256 output, int256 pOutput, int256 iOutput) = piController.update(error);
 
-        uint newRedemptionRate = getBoundedRedemptionRate(output);
+        uint newRedemptionRate = getRedemptionRate(output);
+
+        // Update rate
+        oracleRelayer.modifyParameters("redemptionRate", newRedemptionRate);
 
         // Store the timestamp of the update
         lastUpdateTime = now;
 
-        // Update the rate using the setter relayer
-        try setterRelayer.relayRate(newRedemptionRate, feeReceiver) {
-          // Emit success event
-          emit UpdateRedemptionRate(
+        // Emit success event
+        emit UpdateRedemptionRate(
             ray(marketPrice),
             redemptionPrice,
             newRedemptionRate,
             pOutput,
             iOutput
           );
-        }
-        catch(bytes memory revertReason) {
-          emit FailUpdateRedemptionRate(
-            ray(marketPrice),
-            redemptionPrice,
-            newRedemptionRate,
-            pOutput,
-            iOutput,
-            revertReason
-          );
-        }
+
     }
 
     // --- Getters ---
@@ -318,5 +299,27 @@ contract PIControllerRateSetter is GebMath {
     function getRedemptionAndMarketPrices() external returns (uint256 marketPrice, uint256 redemptionPrice) {
         (marketPrice, ) = orcl.getResultWithValidity();
         redemptionPrice = oracleRelayer.redemptionPrice();
+    }
+
+    /*
+    * @notice Get next redemption rate
+    * @param marketPrice EIGHTEEEN_DECIMAL_NUMBER
+    * @param redemptionPrice TWENTY_SEVEN_DECIMAL_NUMBER
+    * @return nextRedemptionRate TWENTY_SEVEN_DECIMAL_NUMBER
+    */
+    function getNextRedemptionRate(uint256 marketPrice, uint256 redemptionPrice) public view returns (uint) {
+        int256 error = relativeError(marketPrice, redemptionPrice);
+
+        if (absolute(error) <= noiseBarrier) {
+          error = 0;
+        } 
+
+        // Controller output is per-second 'delta rate' st.
+        // 1 + output = per-second redemption rate
+        (int256 output, int256 pOutput, int256 iOutput) = piController.getNextPiOutput(error);
+
+        uint nextRedemptionRate = getRedemptionRate(output);
+
+        return nextRedemptionRate;
     }
 }

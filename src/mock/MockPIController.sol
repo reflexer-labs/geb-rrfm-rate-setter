@@ -15,10 +15,10 @@ contract MockPIController {
   function update(int256) virtual external returns (int256, int256, int256) {
       return (int(validated), 0, 0);
   }
-  function perSecondIntegralLeak() virtual external view returns (uint256) {
+  function perSecondIntegralLeak() virtual external pure returns (uint256) {
       return RAY;
   }
-  function elapsed() virtual external view returns (uint256) {
+  function elapsed() virtual external pure returns (uint256) {
       return 1;
   }
 }
